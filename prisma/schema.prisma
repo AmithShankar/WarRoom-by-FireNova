@@ -1,0 +1,212 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum Role {
+  Leader
+  CoLeader
+  Elder
+  Member
+}
+
+enum PlayerStatus {
+  New
+  Staying
+  Warned
+  Left
+  Kicked
+}
+
+enum WarningReason {
+  FailedInitialChallenge
+  MissedWarAttack
+  LowDonations
+  Behavior
+  Other
+}
+
+enum ActivityType {
+  join
+  warning
+  kick
+  promotion
+  note
+}
+
+enum WarState {
+  preparation
+  battle
+  ended
+}
+
+enum WarResult {
+  win
+  loss
+  draw
+}
+
+enum SyncStatus {
+  success
+  partial
+  failed
+}
+
+model Player {
+  id                String        @id @default(cuid())
+  playerTag         String        @unique
+
+  name              String
+  townHallLevel     Int
+  role              Role
+  donations         Int           @default(0)
+  donationsReceived Int           @default(0)
+  warStars          Int           @default(0)
+  cwlStars          Int           @default(0)
+  cwlDestruction    Float         @default(0)
+  cwlAttacksUsed    Int           @default(0)
+  warTotalAttacks   Int           @default(0)
+  warThreeStarRate  Float         @default(0)
+  warAvgDestruction Float         @default(0)
+  warMissedAttacks  Int           @default(0)
+  lastSyncedAt      DateTime?
+
+  status            PlayerStatus  @default(New)
+  postedChallenge   Boolean       @default(false)
+  joinedAt          DateTime
+  removedAt         DateTime?
+  kickReason        String?
+  notes             String        @default("")
+  troopArmy         String        @default("")
+  troopSpells       String        @default("")
+  troopCc           String        @default("")
+  comfortBases      String[]
+  cwlSlot           Int?          @unique
+  cwlExcluded       Boolean       @default(false)
+
+  warnings          Warning[]
+  activity          ActivityEntry[]
+  createdAt         DateTime      @default(now())
+  updatedAt         DateTime      @updatedAt
+}
+
+model Warning {
+  id             String        @id @default(cuid())
+  player         Player        @relation(fields: [playerId], references: [id], onDelete: Cascade)
+  playerId       String
+  date           DateTime
+  durationHours  Int?
+  expirationDate DateTime?
+  reason         WarningReason
+  notes          String        @default("")
+  warPerfected   Boolean?
+  mirrorCleared  Boolean?
+  thLevelCleared Boolean?
+  createdAt      DateTime      @default(now())
+
+  @@index([playerId])
+}
+
+model ActivityEntry {
+  id        String       @id @default(cuid())
+  player    Player       @relation(fields: [playerId], references: [id], onDelete: Cascade)
+  playerId  String
+  date      DateTime
+  type      ActivityType
+  summary   String
+
+  @@index([playerId])
+}
+
+model ClanActivity {
+  id        String   @id @default(cuid())
+  date      DateTime
+  type      String
+  player    String?
+  summary   String
+
+  @@index([date])
+}
+
+model War {
+  id                  String     @id @default(cuid())
+  isCurrent           Boolean    @default(true)
+  opponent            String
+  state               WarState
+  result              WarResult?
+  phaseEndsAt         DateTime
+  teamSize            Int
+  attacksPerMember    Int
+  clanStars           Int
+  opponentStars       Int
+  clanDestruction     Float
+  opponentDestruction Float
+  clanAttacksUsed     Int
+  lastSyncedAt        DateTime   @default(now())
+  members             WarMember[]
+}
+
+model WarMember {
+  id           String @id @default(cuid())
+  war          War    @relation(fields: [warId], references: [id], onDelete: Cascade)
+  warId        String
+  tag          String
+  name         String
+  mapPosition  Int
+  attacksUsed  Int    @default(0)
+  attacksTotal Int
+  starsEarned  Int    @default(0)
+  destruction  Float  @default(0)
+
+  @@index([warId])
+}
+
+model SyncLog {
+  id            String     @id @default(cuid())
+  startedAt     DateTime   @default(now())
+  finishedAt    DateTime?
+  status        SyncStatus
+  membersSynced Int        @default(0)
+  message       String?
+}
+
+model WarRecord {
+  id             String             @id @default(cuid())
+  warKey         String             @unique
+  isCwl          Boolean            @default(false)
+  opponent       String
+  result         WarResult?
+  endTime        DateTime
+  clanStars           Int   @default(0)
+  opponentStars       Int   @default(0)
+  clanDestruction     Float @default(0)
+  opponentDestruction Float @default(0)
+  teamSize            Int   @default(0)
+  attacksPerMember    Int   @default(0)
+  clanAttacksUsed     Int   @default(0)
+  participations WarParticipation[]
+  createdAt      DateTime           @default(now())
+}
+
+model WarParticipation {
+  id           String    @id @default(cuid())
+  warRecord    WarRecord @relation(fields: [warRecordId], references: [id], onDelete: Cascade)
+  warRecordId  String
+  playerTag    String
+  name         String
+  mapPosition  Int
+  attacksUsed  Int       @default(0)
+  attacksTotal Int
+  starsEarned  Int       @default(0)
+  threeStars   Int       @default(0)
+  destruction  Float     @default(0)
+  excused      Boolean   @default(false)
+  excuseReason String?
+
+  @@unique([warRecordId, playerTag])
+  @@index([playerTag])
+}

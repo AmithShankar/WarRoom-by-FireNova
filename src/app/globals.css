@@ -1,0 +1,130 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+:root {
+  --surface-1: #ffffff;
+  --surface-2: #e8eaef;
+  --surface-3: #dadde4;
+  --surface-4: #c7ccd6;
+
+  --border-1: #d0d5dd;
+  --border-strong: #aeb5c2;
+
+  --text-1: #09090b;
+  --text-2: #52525b;
+  --text-3: #71788a;
+
+  --brand-from: #ef4444;
+  --brand-to: #f97316;
+}
+
+.dark {
+  --surface-1: #09090b;
+  --surface-2: #131316;
+  --surface-3: #1c1c20;
+  --surface-4: #27272a;
+
+  --border-1: #27272a;
+  --border-strong: #3f3f46;
+
+  --text-1: #fafafa;
+  --text-2: #a1a1aa;
+  --text-3: #71717a;
+
+  --brand-from: #f43f5e;
+  --brand-to: #fb923c;
+}
+
+@theme inline {
+  --color-surface-1: var(--surface-1);
+  --color-surface-2: var(--surface-2);
+  --color-surface-3: var(--surface-3);
+  --color-surface-4: var(--surface-4);
+  --color-border-1: var(--border-1);
+  --color-border-strong: var(--border-strong);
+  --color-text-1: var(--text-1);
+  --color-text-2: var(--text-2);
+  --color-text-3: var(--text-3);
+  --color-brand-from: var(--brand-from);
+  --color-brand-to: var(--brand-to);
+  --font-sans: var(--font-sans);
+  --font-mono: var(--font-mono);
+
+  --shadow-glow-sm:
+    0 0 0 1px color-mix(in oklch, var(--brand-from) 30%, transparent),
+    0 6px 24px -8px color-mix(in oklch, var(--brand-from) 40%, transparent);
+  --shadow-glow-md:
+    0 0 0 1px color-mix(in oklch, var(--brand-from) 40%, transparent),
+    0 12px 36px -10px color-mix(in oklch, var(--brand-from) 50%, transparent);
+}
+
+html,
+body {
+  height: 100%;
+}
+body {
+  background: var(--surface-2);
+  color: var(--text-1);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--border-strong) transparent;
+}
+*::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+*::-webkit-scrollbar-thumb {
+  background: var(--border-strong);
+  border-radius: 999px;
+}
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.app-backdrop {
+  background:
+    radial-gradient(
+      800px 400px at 0% -10%,
+      color-mix(in oklch, var(--brand-from) 8%, transparent),
+      transparent 60%
+    ),
+    radial-gradient(
+      900px 500px at 100% -20%,
+      color-mix(in oklch, var(--brand-to) 6%, transparent),
+      transparent 60%
+    ),
+    var(--surface-2);
+}
+
+@keyframes attention-pulse {
+  0%,
+  100% {
+    background-color: color-mix(in oklch, #f59e0b 5%, transparent);
+  }
+  50% {
+    background-color: color-mix(in oklch, #f59e0b 14%, transparent);
+  }
+}
+.attention-row {
+  animation: attention-pulse 2.6s ease-in-out infinite;
+}
+
+.drag-glow {
+  box-shadow:
+    0 0 0 1px color-mix(in oklch, var(--brand-to) 50%, transparent),
+    0 12px 36px -6px color-mix(in oklch, var(--brand-to) 50%, transparent);
+}
+
+html.dark body {
+  color-scheme: dark;
+}
+html:not(.dark) body {
+  color-scheme: light;
+}
