@@ -1,6 +1,8 @@
+import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
 import { addHours } from 'date-fns';
 import { router, publicProcedure } from '../trpc';
+import type { PlayerStatus } from '@/lib/prisma';
 
 const warningInput = z.object({
   playerTag: z.string(),
@@ -30,6 +32,18 @@ const REASON_DISPLAY: Record<
   Behavior: 'Behavior',
   Other: 'Other',
 };
+
+export const ACTIVITY_LABELS: Record<'ClanGames' | 'CWL' | 'RaidWeekend' | 'Other', string> = {
+  ClanGames: 'Clan Games',
+  CWL: 'CWL Participation',
+  RaidWeekend: 'Raid Weekend',
+  Other: 'Other',
+};
+
+/** Returns true when a player is eligible for activity-based promotion to Staying. */
+export function canMarkStayingByActivity(status: PlayerStatus): boolean {
+  return status === 'New' || status === 'Warned';
+}
 
 export const rosterRouter = router({
   list: publicProcedure.query(({ ctx }) =>
@@ -152,6 +166,39 @@ export const rosterRouter = router({
         data: {
           postedChallenge: input.posted,
           ...(input.posted && player.status === 'New' ? { status: 'Staying' as const } : {}),
+        },
+      });
+      return { ok: true };
+    }),
+
+  markStayingByActivity: publicProcedure
+    .input(z.object({
+      playerTag: z.string(),
+      activity: z.enum(['ClanGames', 'CWL', 'RaidWeekend', 'Other']),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const player = await ctx.prisma.player.findUniqueOrThrow({
+        where: { playerTag: input.playerTag },
+        select: { id: true, name: true, status: true },
+      });
+      if (!canMarkStayingByActivity(player.status)) {
+        throw new TRPCError({
+          code: 'BAD_REQUEST',
+          message: `Player status "${player.status}" is not eligible for activity-based promotion.`,
+        });
+      }
+      const label = ACTIVITY_LABELS[input.activity];
+      await ctx.prisma.player.update({
+        where: { id: player.id },
+        data: {
+          status: 'Staying',
+          activity: {
+            create: {
+              date: new Date(),
+              type: 'promotion',
+              summary: `Marked staying — ${label}`,
+            },
+          },
         },
       });
       return { ok: true };

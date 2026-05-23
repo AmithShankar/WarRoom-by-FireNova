@@ -3,6 +3,7 @@
 import { memo, useMemo, useState } from 'react';
 import { addHours, format } from 'date-fns';
 import {
+  Activity,
   AlertTriangle,
   CalendarDays,
   Clock,
@@ -33,6 +34,7 @@ import {
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Badge } from '@/components/ui/badge';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { toast } from 'sonner';
 import { cn, formatNumber, formatPercent } from '@/lib/utils';
 import type { Player, Warning, WarningReason, WarWarningContext } from '@/lib/types';
 import type { IssueWarningInput } from '@/hooks/useRosterData';
@@ -264,6 +266,21 @@ export function PlayerDetailsSheet({
 
   const setChallenge = trpc.roster.setChallenge.useMutation({
     onSuccess: () => utils.roster.list.invalidate(),
+  });
+
+  const [activityOpen, setActivityOpen] = useState(false);
+  const [activityValue, setActivityValue] = useState('');
+
+  const markStayingByActivity = trpc.roster.markStayingByActivity.useMutation({
+    onSuccess: () => {
+      utils.roster.list.invalidate();
+      setActivityOpen(false);
+      setActivityValue('');
+    },
+    onError: (err) => {
+      console.error('[markStayingByActivity]', err);
+      toast.error("Couldn't mark player as staying. Please try again.");
+    },
   });
 
   const [date, setDate] = useState<string>(() => format(new Date(), 'yyyy-MM-dd'));
@@ -571,6 +588,60 @@ export function PlayerDetailsSheet({
           <SheetClose asChild>
             <Button variant="ghost" className="sm:w-auto">Cancel</Button>
           </SheetClose>
+          {(player.status === 'New' || player.status === 'Warned') && (
+            <Popover
+              open={activityOpen}
+              onOpenChange={(v) => {
+                setActivityOpen(v);
+                if (!v) setActivityValue('');
+              }}
+            >
+              <PopoverTrigger asChild>
+                <Button
+                  variant="outline"
+                  className="sm:w-auto border-sky-500/40 text-sky-600 hover:bg-sky-500/10 dark:text-sky-400"
+                  disabled={markStayingByActivity.isPending}
+                >
+                  <Activity className="h-4 w-4" /> Mark as Staying
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent align="end" className="w-64">
+                <div className="space-y-3">
+                  <div className="text-sm font-medium text-text-1">Reason for staying</div>
+                  <Select value={activityValue} onValueChange={setActivityValue}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select activity…" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="ClanGames">Clan Games</SelectItem>
+                      <SelectItem value="CWL">CWL Participation</SelectItem>
+                      <SelectItem value="RaidWeekend">Raid Weekend</SelectItem>
+                      <SelectItem value="Other">Other</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <div className="flex justify-end gap-2">
+                    <Button
+                      variant="ghost"
+                      onClick={() => { setActivityOpen(false); setActivityValue(''); }}
+                    >
+                      Cancel
+                    </Button>
+                    <Button
+                      disabled={!activityValue || markStayingByActivity.isPending}
+                      onClick={() =>
+                        markStayingByActivity.mutate({
+                          playerTag: player.playerTag,
+                          activity: activityValue as 'ClanGames' | 'CWL' | 'RaidWeekend' | 'Other',
+                        })
+                      }
+                    >
+                      Confirm
+                    </Button>
+                  </div>
+                </div>
+              </PopoverContent>
+            </Popover>
+          )}
           {player.postedChallenge ? (
             <Button
               variant="outline"
