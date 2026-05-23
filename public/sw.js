@@ -2,7 +2,7 @@
 // Enables PWA installability and an offline-capable app shell.
 // Live data (/api/*) is never cached so war/roster data stays fresh.
 
-const CACHE = 'warroom-shell-v2';
+const CACHE = 'warroom-shell-v3';
 const SHELL = ['/'];
 
 self.addEventListener('install', (event) => {
