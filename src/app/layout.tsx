@@ -5,6 +5,7 @@ import { ThemeProvider } from '@/components/providers/ThemeProvider';
 import { TrpcProvider } from '@/components/providers/TrpcProvider';
 import { DashboardShell } from '@/components/shell/DashboardShell';
 import { ServiceWorkerRegister } from '@/components/shell/ServiceWorkerRegister';
+import { PushNotificationSetup } from '@/components/shell/PushNotificationSetup';
 import { Toaster } from 'sonner';
 
 const sans = Inter({
@@ -63,6 +64,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         </TrpcProvider>
         <Toaster richColors position="bottom-right" />
         <ServiceWorkerRegister />
+        <PushNotificationSetup />
       </body>
     </html>
   );

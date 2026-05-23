@@ -1,0 +1,16 @@
+name: Sync
+
+on:
+  schedule:
+    - cron: '*/30 * * * *'
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger sync
+        run: |
+          curl -f \
+            -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" \
+            https://war-room-by-fire-nova.vercel.app/api/cron/sync
+        continue-on-error: true

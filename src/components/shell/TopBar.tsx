@@ -6,6 +6,7 @@ import { ThemeToggle } from "./ThemeToggle";
 import { SyncButton } from "./SyncButton";
 import { WarStatusChip } from "./WarStatusChip";
 import { InstallAppButton } from "./InstallAppButton";
+import { NotificationsButton } from './NotificationsButton';
 import { SIDEBAR_NAV } from "./Sidebar";
 
 export function TopBar() {
@@ -36,6 +37,7 @@ export function TopBar() {
       <div className="flex items-center gap-2">
         <WarStatusChip />
         <InstallAppButton />
+        <NotificationsButton />
         <SyncButton />
         <ThemeToggle />
       </div>

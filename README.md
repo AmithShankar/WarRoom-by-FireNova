@@ -24,9 +24,13 @@ Internal dashboard for managing FireNova in Clash of Clans. Tracks the roster, w
 Create `.env.local` with:
 
 ```
-DATABASE_URL=           # Postgres connection string
-COC_API_TOKEN=          # Token from developer.clashofclans.com
-COC_CLAN_TAG=           # Your clan tag (e.g. #ABC123)
+DATABASE_URL=                         # Postgres connection string
+COC_API_TOKEN=                        # Token from developer.clashofclans.com
+COC_CLAN_TAG=                         # Your clan tag (e.g. #ABC123)
+CRON_SECRET=                          # Must match the GitHub Actions repository secret
+NEXT_PUBLIC_VAPID_PUBLIC_KEY=         # From: npx web-push generate-vapid-keys
+VAPID_PRIVATE_KEY=                    # From: npx web-push generate-vapid-keys
+VAPID_EMAIL=                          # mailto:your-email@example.com
 ```
 
 Then:
@@ -65,15 +69,25 @@ There are two war data models:
 
 ## Sync
 
-Sync runs automatically in the background whenever the app is used. Every tRPC query checks whether the last successful sync is older than 30 minutes. If it is, a sync fires in the background without blocking the response, so the page loads instantly from the database and picks up fresh data on the next request.
+A GitHub Actions workflow (`.github/workflows/sync.yml`) calls the sync endpoint every 30 minutes so data stays fresh and push notifications fire on time even when nobody has the app open.
 
-To force an immediate sync, call the sync endpoint directly:
+To force an immediate sync (or to trigger a sync locally during development):
 
 ```bash
-curl https://your-app.vercel.app/api/cron/sync
+curl -H "Authorization: Bearer <CRON_SECRET>" https://war-room-by-fire-nova.vercel.app/api/cron/sync
 ```
 
-There is no Vercel cron job configured. The Hobby plan only allows one daily job, which is not frequent enough to be useful.
+## Push Notifications
+
+Warning expiry notifications are sent to all subscribed devices at the end of each sync. Generate VAPID keys once:
+
+```bash
+npx web-push generate-vapid-keys
+```
+
+Add `NEXT_PUBLIC_VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, and `VAPID_EMAIL` to both `.env.local` and Vercel. Add `CRON_SECRET` to both your Vercel environment and the GitHub Actions repository secret (Settings > Secrets and variables > Actions).
+
+Users enable notifications by clicking the bell icon in the top bar. iOS users must install the app first (Add to Home Screen) before the permission prompt is available.
 
 ## Tests
 
@@ -81,4 +95,4 @@ There is no Vercel cron job configured. The Hobby plan only allows one daily job
 pnpm test
 ```
 
-Vitest, unit tests only (no DB). 48 tests covering war result mapping, CSV import/export, validation, and roster filtering.
+Vitest, unit tests only (no DB). 51 tests covering war result mapping, CSV import/export, validation, roster filtering, and push notification payload building.

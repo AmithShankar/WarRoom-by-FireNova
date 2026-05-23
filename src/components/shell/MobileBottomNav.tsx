@@ -20,6 +20,7 @@ const TabLink = memo(function TabLink({
   return (
     <Link
       href={href}
+      replace
       aria-current={active ? "page" : undefined}
       className={cn(
         "relative flex flex-1 flex-col items-center justify-center gap-1 py-2 text-[10px] font-medium uppercase tracking-wider transition-colors",

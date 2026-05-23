@@ -1,5 +1,6 @@
 import { prisma, type PrismaClient } from '@/lib/prisma';
 import { cocGet, CocApiError } from './client';
+import { sendExpiryNotification, toReadableReason } from './push';
 import {
   cocMembersResponse,
   cocCurrentWarResponse,
@@ -138,6 +139,38 @@ export async function runSync(): Promise<{ membersSynced: number }> {
       where: { id: log.id },
       data: { status: 'success', finishedAt: new Date(), membersSynced: items.length },
     });
+
+    // Check for expired warnings and push to all subscribed devices.
+    try {
+      const expiredWarnings = await prisma.warning.findMany({
+        where: {
+          notified: false,
+          expirationDate: { not: null, lte: new Date() },
+        },
+        include: { player: { select: { name: true } } },
+      });
+
+      if (expiredWarnings.length > 0) {
+        const subs = await prisma.pushSubscription.findMany();
+        const warnings = expiredWarnings.map(w => ({
+          name: w.player.name,
+          reason: toReadableReason(w.reason),
+        }));
+        if (subs.length > 0) {
+          await sendExpiryNotification(warnings, subs);
+        }
+        await prisma.warning.updateMany({
+          where: { id: { in: expiredWarnings.map(w => w.id) } },
+          data: { notified: true },
+        });
+      }
+    } catch (err) {
+      console.warn(
+        'Push notification step failed:',
+        err instanceof Error ? err.message : err,
+      );
+    }
+
     return { membersSynced: items.length };
   } catch (err) {
     await prisma.syncLog.update({
