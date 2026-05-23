@@ -325,14 +325,9 @@ export function PlayerDetailsSheet({
                 <ShieldCheck className="h-3.5 w-3.5" /> Challenge posted
               </span>
             ) : (
-              <button
-                type="button"
-                onClick={() => setChallenge.mutate({ playerTag: player.playerTag, posted: true })}
-                disabled={setChallenge.isPending}
-                className="inline-flex cursor-pointer items-center gap-1 rounded-md bg-amber-500/10 px-2 py-1 text-[11px] text-amber-600 transition-colors hover:bg-amber-500/20 disabled:opacity-50 dark:text-amber-400"
-              >
-                <ShieldAlert className="h-3.5 w-3.5" /> Awaiting challenge — tap to mark posted
-              </button>
+              <span className="inline-flex items-center gap-1 rounded-md bg-amber-500/10 px-2 py-1 text-[11px] text-amber-600 dark:text-amber-400">
+                <ShieldAlert className="h-3.5 w-3.5" /> Awaiting challenge
+              </span>
             )}
           </div>
           <div className="mt-4 grid grid-cols-3 gap-2.5">
@@ -576,6 +571,25 @@ export function PlayerDetailsSheet({
           <SheetClose asChild>
             <Button variant="ghost" className="sm:w-auto">Cancel</Button>
           </SheetClose>
+          {player.postedChallenge ? (
+            <Button
+              variant="outline"
+              className="sm:w-auto"
+              disabled={setChallenge.isPending}
+              onClick={() => setChallenge.mutate({ playerTag: player.playerTag, posted: false })}
+            >
+              <ShieldAlert className="h-4 w-4" /> Remove Challenge
+            </Button>
+          ) : (
+            <Button
+              variant="outline"
+              className="sm:w-auto border-emerald-500/40 text-emerald-600 hover:bg-emerald-500/10 dark:text-emerald-400"
+              disabled={setChallenge.isPending}
+              onClick={() => setChallenge.mutate({ playerTag: player.playerTag, posted: true })}
+            >
+              <ShieldCheck className="h-4 w-4" /> Mark Challenge Posted
+            </Button>
+          )}
           <Button
             onClick={submit}
             className="sm:w-auto"
