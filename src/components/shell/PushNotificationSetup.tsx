@@ -50,8 +50,19 @@ export function PushNotificationSetup() {
     if (!('Notification' in window) || !('PushManager' in window)) return;
     if (Notification.permission === 'denied') return;
 
+    const isStandalone =
+      window.matchMedia('(display-mode: standalone)').matches ||
+      (navigator as Navigator & { standalone?: boolean }).standalone === true;
+
     navigator.serviceWorker.ready
-      .then(syncSubscription)
+      .then(async (reg) => {
+        // In an installed PWA, auto-prompt for permission on first open.
+        if (isStandalone && Notification.permission === 'default') {
+          const permission = await Notification.requestPermission();
+          if (permission !== 'granted') return;
+        }
+        await syncSubscription(reg);
+      })
       .catch(() => {
         // Non-fatal — push just won't work on this device.
       });

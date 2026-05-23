@@ -70,11 +70,15 @@ self.addEventListener('push', (event) => {
   if (!event.data) return;
   const { title, body, icon, data } = event.data.json();
   event.waitUntil(
-    self.registration.showNotification(title, {
-      body,
-      icon,
-      data,
-      badge: '/icon-192.png',
+    clients.matchAll({ type: 'window', includeUncontrolled: true }).then((list) => {
+      const appOpen = list.some((c) => c.visibilityState === 'visible');
+      if (appOpen) return; // app is in the foreground — skip the system notification
+      return self.registration.showNotification(title, {
+        body,
+        icon,
+        data,
+        badge: '/icon-192.png',
+      });
     }),
   );
 });

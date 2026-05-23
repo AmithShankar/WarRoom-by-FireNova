@@ -59,7 +59,7 @@ export const WarningSheet = memo(function WarningSheet({
 
   const expiration = useMemo(() => {
     if (duration == null) return null;
-    const base = date ? new Date(`${date}T12:00:00`) : new Date();
+    const base = date ? new Date(`${date}T${format(new Date(), 'HH:mm:ss')}`) : new Date();
     return addHours(base, duration);
   }, [date, duration]);
 
@@ -72,7 +72,7 @@ export const WarningSheet = memo(function WarningSheet({
     if (isFailedChallenge && duration == null) return;
     onWarn({
       playerTag: player.playerTag,
-      date: new Date(`${date}T12:00:00`),
+      date: new Date(`${date}T${format(new Date(), 'HH:mm:ss')}`),
       durationHours: duration,
       reason,
       notes,

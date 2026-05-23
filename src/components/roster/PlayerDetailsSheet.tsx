@@ -262,6 +262,10 @@ export function PlayerDetailsSheet({
     },
   });
 
+  const setChallenge = trpc.roster.setChallenge.useMutation({
+    onSuccess: () => utils.roster.list.invalidate(),
+  });
+
   const [date, setDate] = useState<string>(() => format(new Date(), 'yyyy-MM-dd'));
   const [duration, setDuration] = useState<number | null>(48);
   const [reason, setReason] = useState<WarningReason>('Missed War Attack');
@@ -274,7 +278,7 @@ export function PlayerDetailsSheet({
 
   const expiration = useMemo(() => {
     if (duration == null) return null;
-    const base = date ? new Date(`${date}T12:00:00`) : new Date();
+    const base = date ? new Date(`${date}T${format(new Date(), 'HH:mm:ss')}`) : new Date();
     return addHours(base, duration);
   }, [date, duration]);
 
@@ -287,7 +291,7 @@ export function PlayerDetailsSheet({
     if (isFailedChallenge && duration == null) return;
     onIssueWarning({
       playerTag: player.playerTag,
-      date: new Date(`${date}T12:00:00`),
+      date: new Date(`${date}T${format(new Date(), 'HH:mm:ss')}`),
       durationHours: duration,
       reason,
       notes,
@@ -321,9 +325,14 @@ export function PlayerDetailsSheet({
                 <ShieldCheck className="h-3.5 w-3.5" /> Challenge posted
               </span>
             ) : (
-              <span className="inline-flex items-center gap-1 rounded-md bg-amber-500/10 px-2 py-1 text-[11px] text-amber-600 dark:text-amber-400">
-                <ShieldAlert className="h-3.5 w-3.5" /> Awaiting challenge
-              </span>
+              <button
+                type="button"
+                onClick={() => setChallenge.mutate({ playerTag: player.playerTag, posted: true })}
+                disabled={setChallenge.isPending}
+                className="inline-flex cursor-pointer items-center gap-1 rounded-md bg-amber-500/10 px-2 py-1 text-[11px] text-amber-600 transition-colors hover:bg-amber-500/20 disabled:opacity-50 dark:text-amber-400"
+              >
+                <ShieldAlert className="h-3.5 w-3.5" /> Awaiting challenge — tap to mark posted
+              </button>
             )}
           </div>
           <div className="mt-4 grid grid-cols-3 gap-2.5">
