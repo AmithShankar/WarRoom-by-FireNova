@@ -6,9 +6,12 @@ export default defineConfig({
   migrations: {
     path: 'prisma/migrations',
   },
-  // url and directUrl are declared in prisma/schema.prisma via env("DATABASE_URL") and
-  // env("DIRECT_URL"). The directUrl field is not supported in defineConfig (Prisma 7
-  // Datasource type only accepts `url` and `shadowDatabaseUrl`), so schema.prisma is
-  // the only place it works. directUrl is required for `prisma migrate deploy` because
-  // pg_advisory_lock (used for migration locking) is incompatible with connection poolers.
+  datasource: {
+    // Prisma 7 separates CLI and runtime URLs completely.
+    // DIRECT_URL (non-pooled) is used here so `prisma migrate deploy` can acquire
+    // pg_advisory_lock — advisory locks are incompatible with connection poolers.
+    // The runtime client in src/lib/prisma.ts uses DATABASE_URL (Prisma Accelerate)
+    // via PrismaPg adapter independently — this config does not affect it.
+    url: process.env['DIRECT_URL'],
+  },
 });
