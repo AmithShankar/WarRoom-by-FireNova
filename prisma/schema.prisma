@@ -136,6 +136,8 @@ model ClanActivity {
 model War {
   id                  String     @id @default(cuid())
   isCurrent           Boolean    @default(true)
+  isCwl               Boolean    @default(false)
+  cwlDay              Int?
   opponent            String
   state               WarState
   result              WarResult?

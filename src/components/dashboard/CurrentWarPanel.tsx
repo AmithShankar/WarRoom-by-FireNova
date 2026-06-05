@@ -70,7 +70,8 @@ export const CurrentWarPanel = memo(function CurrentWarPanel({ war }: { war: Cur
       <CardHeader>
         <div className="flex flex-wrap items-center justify-between gap-2">
           <CardTitle className="flex items-center gap-2">
-            <Swords className="h-4 w-4 text-brand-from" /> Current War
+            <Swords className="h-4 w-4 text-brand-from" />
+            {war.isCwl ? `CWL · Day ${war.cwlDay ?? '?'}` : 'Current War'}
           </CardTitle>
           <Badge tone={STATE_TONE[war.state]}>{STATE_LABEL[war.state]}</Badge>
         </div>

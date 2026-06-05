@@ -52,6 +52,7 @@ export function mapCurrentWar(w: CocCurrentWar) {
   return {
     war: {
       isCurrent: true,
+      isCwl: false,
       opponent: w.opponent.name ?? 'Unknown',
       state,
       result: null as null,
@@ -155,7 +156,8 @@ export function mapEndedWarToRecord(w: CocCurrentWar): WarArchive | null {
 
 export type CwlCurrentWarResult = {
   war: {
-    isCurrent: true; opponent: string; state: WarState; result: null;
+    isCurrent: true; isCwl: true; cwlDay: number;
+    opponent: string; state: WarState; result: null;
     phaseEndsAt: Date; teamSize: number; attacksPerMember: number;
     clanStars: number; opponentStars: number; clanDestruction: number;
     opponentDestruction: number; clanAttacksUsed: number; lastSyncedAt: Date;
@@ -171,6 +173,7 @@ export type CwlCurrentWarResult = {
 export function mapCwlWarToCurrent(
   w: CocClanWarLeagueWar,
   clanTag: string,
+  cwlDay: number,
 ): CwlCurrentWarResult | null {
   if (w.state !== 'preparation' && w.state !== 'inWar') return null;
   const norm = (t?: string) => (t ?? '').toUpperCase();
@@ -197,6 +200,8 @@ export function mapCwlWarToCurrent(
   return {
     war: {
       isCurrent: true as const,
+      isCwl: true as const,
+      cwlDay,
       opponent: foe.name ?? 'CWL Opponent',
       state,
       result: null,

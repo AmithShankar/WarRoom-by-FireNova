@@ -1,0 +1,3 @@
+-- AlterTable
+ALTER TABLE "War" ADD COLUMN     "cwlDay" INTEGER,
+ADD COLUMN     "isCwl" BOOLEAN NOT NULL DEFAULT false;

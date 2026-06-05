@@ -196,6 +196,8 @@ export function mapLastWar(
 export function mapCurrentWar(w: PrismaWar & { members: PrismaWarMember[] }): CurrentWar {
   return {
     opponent: w.opponent,
+    isCwl: w.isCwl,
+    ...(w.cwlDay != null ? { cwlDay: w.cwlDay } : {}),
     state: WAR_STATE[w.state],
     phaseEndsAt: iso(w.phaseEndsAt),
     teamSize: w.teamSize,

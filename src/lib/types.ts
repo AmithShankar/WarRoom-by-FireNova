@@ -121,6 +121,8 @@ export type WarMemberInfo = {
 
 export type CurrentWar = {
   opponent: string;
+  isCwl: boolean;
+  cwlDay?: number;              // 1-based round number, present only when isCwl is true
   state: WarState;
   phaseEndsAt: string;          // ISO - when the prep or battle phase ends
   teamSize: number;             // players per side

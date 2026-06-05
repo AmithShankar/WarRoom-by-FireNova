@@ -178,8 +178,11 @@ export async function runSync(): Promise<{ membersSynced: number }> {
       const groupRaw = await cocGet<unknown>(`/clans/${CLAN_TAG}/currentwar/leaguegroup`);
       const group = cocLeagueGroupResponse.parse(groupRaw);
       const allWarTags = group.rounds.flatMap(r => r.warTags);
-      const warTags = allWarTags.filter(t => t && t !== '#0');
-      console.log(`[CWL] leaguegroup: state=${group.state} season=${group.season ?? 'n/a'} rounds=${group.rounds.length} totalTags=${allWarTags.length} activeTags=${warTags.length}`);
+      // Pair each warTag with its 1-based day number (round index + 1).
+      const warTagsWithDay = group.rounds.flatMap((r, i) =>
+        r.warTags.filter(t => t && t !== '#0').map(t => ({ warTag: t, day: i + 1 })),
+      );
+      console.log(`[CWL] leaguegroup: state=${group.state} season=${group.season ?? 'n/a'} rounds=${group.rounds.length} totalTags=${allWarTags.length} activeTags=${warTagsWithDay.length}`);
 
       // Step 1: fetch all CWL war data in parallel — HTTP calls don't use DB connections.
       const archives: WarArchive[] = [];
@@ -187,7 +190,7 @@ export async function runSync(): Promise<{ membersSynced: number }> {
       const cwlWarCandidates: CwlCurrentWarResult[] = [];
 
       await Promise.all(
-        warTags.map(async warTag => {
+        warTagsWithDay.map(async ({ warTag, day }) => {
           try {
             const cwlRaw = await cocGet<unknown>(`/clanwarleagues/wars/${warTag}`);
             const cwlWar = cocClanWarLeagueWar.parse(cwlRaw);
@@ -200,7 +203,7 @@ export async function runSync(): Promise<{ membersSynced: number }> {
               console.log(`[CWL] war ${warTag}: state=${cwlWar.state} ${clanSide} vs ${oppSide} → archived`);
             }
 
-            const current = mapCwlWarToCurrent(cwlWar, CLAN_TAG);
+            const current = mapCwlWarToCurrent(cwlWar, CLAN_TAG, day);
             if (current) {
               cwlWarCandidates.push(current);
               console.log(`[CWL] war ${warTag}: state=${cwlWar.state} → current war candidate (dashboard)`);
