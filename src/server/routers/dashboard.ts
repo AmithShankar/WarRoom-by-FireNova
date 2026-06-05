@@ -1,5 +1,6 @@
-import { PlayerStatus } from '@prisma/client';
+import { z } from 'zod';
 import { router, publicProcedure } from '../trpc';
+import type { PlayerStatus } from '@/lib/prisma';
 
 export const dashboardRouter = router({
   overview: publicProcedure.query(async ({ ctx }) => {
