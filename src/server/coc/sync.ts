@@ -14,6 +14,7 @@ import {
   mapCwlWarToRecord,
   mapCwlWarToCurrent,
   type WarArchive,
+  type CwlCurrentWarResult,
 } from './map';
 
 const CLAN_TAG = process.env.COC_CLAN_TAG ?? '';
@@ -182,8 +183,8 @@ export async function runSync(): Promise<{ membersSynced: number }> {
 
       // Step 1: fetch all CWL war data in parallel — HTTP calls don't use DB connections.
       const archives: WarArchive[] = [];
-      // Current active CWL war for our clan (prep or inWar) → goes to War table for dashboard display.
-      let activeCwlWar: ReturnType<typeof mapCwlWarToCurrent> = null;
+      // Collect all candidate current wars; after Promise.all we pick the best one.
+      const cwlWarCandidates: CwlCurrentWarResult[] = [];
 
       await Promise.all(
         warTags.map(async warTag => {
@@ -201,11 +202,8 @@ export async function runSync(): Promise<{ membersSynced: number }> {
 
             const current = mapCwlWarToCurrent(cwlWar, CLAN_TAG);
             if (current) {
-              // Prefer inWar over preparation — only use preparation if no battle-phase war found yet.
-              if (activeCwlWar === null || cwlWar.state === 'inWar') {
-                activeCwlWar = current;
-              }
-              console.log(`[CWL] war ${warTag}: state=${cwlWar.state} → current war (dashboard)`);
+              cwlWarCandidates.push(current);
+              console.log(`[CWL] war ${warTag}: state=${cwlWar.state} → current war candidate (dashboard)`);
             } else if (!archive) {
               console.log(`[CWL] war ${warTag}: state=${cwlWar.state} ${clanSide} vs ${oppSide} → skipped`);
             }
@@ -214,6 +212,13 @@ export async function runSync(): Promise<{ membersSynced: number }> {
           }
         }),
       );
+
+      // Prefer inWar (battle) over preparation — only fall back to preparation on the first day of CWL
+      // when no battle-phase war exists yet. Avoids showing the next round's prep alongside an active battle.
+      const activeCwlWar =
+        cwlWarCandidates.find(w => w.war.state === 'battle') ??
+        cwlWarCandidates[0] ??
+        null;
 
       // Update the War table with the current active CWL war so the dashboard shows it.
       // /currentwar returns 403 during CWL, so this is the only source of current-war data.
