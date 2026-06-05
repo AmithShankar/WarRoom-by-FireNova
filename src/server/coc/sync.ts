@@ -40,9 +40,18 @@ async function updatePlayerCwlStats(db: PrismaClient): Promise<void> {
   const seasonStart = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), 1));
   const seasonEnd   = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth() + 1, 1));
 
+  // Prisma groupBy cannot filter on relation fields, so we resolve record IDs first.
+  const cwlRecords = await db.warRecord.findMany({
+    where: { isCwl: true, endTime: { gte: seasonStart, lt: seasonEnd } },
+    select: { id: true },
+  });
+  if (cwlRecords.length === 0) return; // no completed CWL wars this season yet
+  const cwlRecordIds = cwlRecords.map(r => r.id);
+
+  // Query succeeds before we reset — so a query failure leaves existing values intact.
   const stats = await db.warParticipation.groupBy({
     by: ['playerTag'],
-    where: { warRecord: { isCwl: true, endTime: { gte: seasonStart, lt: seasonEnd } } },
+    where: { warRecordId: { in: cwlRecordIds } },
     _sum: { starsEarned: true, attacksUsed: true },
     _avg: { destruction: true },
   });
@@ -72,13 +81,16 @@ async function archiveWar(db: PrismaClient, archive: WarArchive): Promise<void> 
     update: archive.record,
     create: archive.record,
   });
-  for (const p of archive.participations) {
-    await db.warParticipation.upsert({
-      where: { warRecordId_playerTag: { warRecordId: record.id, playerTag: p.playerTag } },
-      update: p,
-      create: { ...p, warRecordId: record.id },
-    });
-  }
+  // Parallel upserts — each targets a unique [warRecordId, playerTag] key, no conflicts.
+  await Promise.all(
+    archive.participations.map(p =>
+      db.warParticipation.upsert({
+        where: { warRecordId_playerTag: { warRecordId: record.id, playerTag: p.playerTag } },
+        update: p,
+        create: { ...p, warRecordId: record.id },
+      }),
+    ),
+  );
 }
 
 export async function runSync(): Promise<{ membersSynced: number }> {
@@ -88,67 +100,63 @@ export async function runSync(): Promise<{ membersSynced: number }> {
 
     const membersRaw = await cocGet<unknown>(`/clans/${CLAN_TAG}/members`);
     const { items } = cocMembersResponse.parse(membersRaw);
-    const seenTags = new Set<string>();
+    const seenTags = new Set(items.map(m => m.tag));
 
-    for (const m of items) {
-      seenTags.add(m.tag);
-      const cocFields = mapMemberToPlayer(m);
-      const existing = await prisma.player.findUnique({
-        where: { playerTag: m.tag },
-        select: { id: true, status: true },
-      });
-      const isRejoin =
-        existing != null && (existing.status === 'Left' || existing.status === 'Kicked');
-      await prisma.player.upsert({
-        where: { playerTag: m.tag },
-        update: {
-          ...cocFields,
-          ...(isRejoin
-            ? { status: 'New', removedAt: null, kickReason: null, joinedAt: new Date() }
-            : {}),
-        },
-        create: { playerTag: m.tag, joinedAt: new Date(), ...cocFields },
-      });
-      if (!existing) {
-        await prisma.clanActivity.create({
-          data: {
-            date: new Date(),
-            type: 'join',
-            player: m.name,
-            summary: `${m.name} joined the clan`,
+    // Pre-fetch all existing players in one query, then upsert in parallel.
+    const existingPlayers = await prisma.player.findMany({
+      where: { playerTag: { in: [...seenTags] } },
+      select: { playerTag: true, status: true },
+    });
+    const existingByTag = new Map(existingPlayers.map(p => [p.playerTag, p]));
+
+    const joinActivity: { date: Date; type: string; player: string; summary: string }[] = [];
+    await Promise.all(
+      items.map(async m => {
+        const cocFields = mapMemberToPlayer(m);
+        const existing = existingByTag.get(m.tag);
+        const isRejoin = existing?.status === 'Left' || existing?.status === 'Kicked';
+        await prisma.player.upsert({
+          where: { playerTag: m.tag },
+          update: {
+            ...cocFields,
+            ...(isRejoin
+              ? { status: 'New', removedAt: null, kickReason: null, joinedAt: new Date() }
+              : {}),
           },
+          create: { playerTag: m.tag, joinedAt: new Date(), ...cocFields },
         });
-      } else if (isRejoin) {
-        await prisma.clanActivity.create({
-          data: {
-            date: new Date(),
-            type: 'join',
-            player: m.name,
-            summary: `${m.name} rejoined the clan`,
-          },
-        });
-      }
+        if (!existing) {
+          joinActivity.push({ date: new Date(), type: 'join', player: m.name, summary: `${m.name} joined the clan` });
+        } else if (isRejoin) {
+          joinActivity.push({ date: new Date(), type: 'join', player: m.name, summary: `${m.name} rejoined the clan` });
+        }
+      }),
+    );
+    if (joinActivity.length > 0) {
+      await prisma.clanActivity.createMany({ data: joinActivity });
     }
 
+    // Detect departures: active players not seen in the API response.
     const dbPlayers = await prisma.player.findMany({
       where: { status: { notIn: ['Left', 'Kicked'] } },
-      select: { id: true, playerTag: true, name: true },
+      select: { playerTag: true, name: true },
     });
-    for (const p of dbPlayers) {
-      if (!seenTags.has(p.playerTag)) {
-        await prisma.player.update({
-          where: { id: p.id },
+    const departed = dbPlayers.filter(p => !seenTags.has(p.playerTag));
+    if (departed.length > 0) {
+      await Promise.all([
+        prisma.player.updateMany({
+          where: { playerTag: { in: departed.map(p => p.playerTag) } },
           data: { status: 'Left', removedAt: new Date() },
-        });
-        await prisma.clanActivity.create({
-          data: {
+        }),
+        prisma.clanActivity.createMany({
+          data: departed.map(p => ({
             date: new Date(),
             type: 'kick',
             player: p.name,
             summary: `${p.name} left the clan`,
-          },
-        });
-      }
+          })),
+        }),
+      ]);
     }
 
     const warRaw = await cocGet<unknown>(`/clans/${CLAN_TAG}/currentwar`);
@@ -167,16 +175,20 @@ export async function runSync(): Promise<{ membersSynced: number }> {
       const groupRaw = await cocGet<unknown>(`/clans/${CLAN_TAG}/currentwar/leaguegroup`);
       const group = cocLeagueGroupResponse.parse(groupRaw);
       const warTags = group.rounds.flatMap(r => r.warTags).filter(t => t && t !== '#0');
-      for (const warTag of warTags) {
-        try {
-          const cwlRaw = await cocGet<unknown>(`/clanwarleagues/wars/${warTag}`);
-          const cwlWar = cocClanWarLeagueWar.parse(cwlRaw);
-          const archive = mapCwlWarToRecord(cwlWar, warTag, CLAN_TAG);
-          if (archive) await archiveWar(prisma, archive);
-        } catch (e) {
-          console.warn(`CWL war ${warTag} skipped:`, e instanceof Error ? e.message : e);
-        }
-      }
+      // Fetch all CWL wars in parallel — with 7+ rounds × 8 clans, sequential fetches
+      // easily exceeded the Vercel function timeout. Each warTag is independent.
+      await Promise.all(
+        warTags.map(async warTag => {
+          try {
+            const cwlRaw = await cocGet<unknown>(`/clanwarleagues/wars/${warTag}`);
+            const cwlWar = cocClanWarLeagueWar.parse(cwlRaw);
+            const archive = mapCwlWarToRecord(cwlWar, warTag, CLAN_TAG);
+            if (archive) await archiveWar(prisma, archive);
+          } catch (e) {
+            console.warn(`CWL war ${warTag} skipped:`, e instanceof Error ? e.message : e);
+          }
+        }),
+      );
     } catch (e) {
       if (!(e instanceof CocApiError) || e.status !== 404) {
         console.warn('CWL leaguegroup sync skipped:', e instanceof Error ? e.message : e);
