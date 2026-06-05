@@ -153,6 +153,67 @@ export function mapEndedWarToRecord(w: CocCurrentWar): WarArchive | null {
   };
 }
 
+export type CwlCurrentWarResult = {
+  war: {
+    isCurrent: true; opponent: string; state: WarState; result: null;
+    phaseEndsAt: Date; teamSize: number; attacksPerMember: number;
+    clanStars: number; opponentStars: number; clanDestruction: number;
+    opponentDestruction: number; clanAttacksUsed: number; lastSyncedAt: Date;
+  };
+  members: { tag: string; name: string; mapPosition: number; attacksUsed: number; attacksTotal: number; starsEarned: number; destruction: number }[];
+};
+
+/**
+ * Maps an active CWL war (preparation or inWar) to the mutable War table format
+ * so the dashboard current-war panel shows CWL matchups, same as regular war.
+ * Returns null if the war doesn't involve our clan or is not active.
+ */
+export function mapCwlWarToCurrent(
+  w: CocClanWarLeagueWar,
+  clanTag: string,
+): CwlCurrentWarResult | null {
+  if (w.state !== 'preparation' && w.state !== 'inWar') return null;
+  const norm = (t?: string) => (t ?? '').toUpperCase();
+  let fireNova: WarClanLike;
+  let foe: WarClanLike;
+  if (norm(w.clan.tag) === norm(clanTag)) { fireNova = w.clan; foe = w.opponent; }
+  else if (norm(w.opponent.tag) === norm(clanTag)) { fireNova = w.opponent; foe = w.clan; }
+  else return null;
+
+  const state: WarState = w.state === 'preparation' ? 'preparation' : 'battle';
+  // preparation → phaseEndsAt is when battle starts; inWar → when battle ends
+  const phaseEndsAt = state === 'preparation' ? parseCocDate(w.startTime) : parseCocDate(w.endTime);
+
+  const members = (fireNova.members ?? []).map(m => ({
+    tag: m.tag,
+    name: m.name,
+    mapPosition: m.mapPosition,
+    attacksUsed: m.attacks?.length ?? 0,
+    attacksTotal: 1,
+    starsEarned: (m.attacks ?? []).reduce((s, a) => s + a.stars, 0),
+    destruction: (m.attacks ?? []).reduce((s, a) => s + a.destructionPercentage, 0),
+  }));
+
+  return {
+    war: {
+      isCurrent: true as const,
+      opponent: foe.name ?? 'CWL Opponent',
+      state,
+      result: null,
+      phaseEndsAt,
+      teamSize: w.teamSize ?? 15,
+      attacksPerMember: 1,
+      clanStars: fireNova.stars,
+      opponentStars: foe.stars,
+      clanDestruction: fireNova.destructionPercentage,
+      opponentDestruction: foe.destructionPercentage,
+      clanAttacksUsed: members.reduce((s, m) => s + m.attacksUsed, 0),
+      lastSyncedAt: new Date(),
+    },
+    members,
+  };
+}
+
 export function mapCwlWarToRecord(
   w: CocClanWarLeagueWar,
   warTag: string,

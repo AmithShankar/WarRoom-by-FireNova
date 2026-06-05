@@ -12,6 +12,7 @@ import {
   mapCurrentWar,
   mapEndedWarToRecord,
   mapCwlWarToRecord,
+  mapCwlWarToCurrent,
   type WarArchive,
 } from './map';
 
@@ -175,29 +176,66 @@ export async function runSync(): Promise<{ membersSynced: number }> {
     try {
       const groupRaw = await cocGet<unknown>(`/clans/${CLAN_TAG}/currentwar/leaguegroup`);
       const group = cocLeagueGroupResponse.parse(groupRaw);
-      const warTags = group.rounds.flatMap(r => r.warTags).filter(t => t && t !== '#0');
+      const allWarTags = group.rounds.flatMap(r => r.warTags);
+      const warTags = allWarTags.filter(t => t && t !== '#0');
+      console.log(`[CWL] leaguegroup: state=${group.state} season=${group.season ?? 'n/a'} rounds=${group.rounds.length} totalTags=${allWarTags.length} activeTags=${warTags.length}`);
+
       // Step 1: fetch all CWL war data in parallel — HTTP calls don't use DB connections.
-      // Without this, 7+ rounds × 8 clans of sequential fetches blew Vercel's 60s timeout.
       const archives: WarArchive[] = [];
+      // Current active CWL war for our clan (prep or inWar) → goes to War table for dashboard display.
+      let activeCwlWar: ReturnType<typeof mapCwlWarToCurrent> = null;
+
       await Promise.all(
         warTags.map(async warTag => {
           try {
             const cwlRaw = await cocGet<unknown>(`/clanwarleagues/wars/${warTag}`);
             const cwlWar = cocClanWarLeagueWar.parse(cwlRaw);
+            const clanSide = cwlWar.clan.tag ?? '?';
+            const oppSide = cwlWar.opponent.tag ?? '?';
+
             const archive = mapCwlWarToRecord(cwlWar, warTag, CLAN_TAG);
-            if (archive) archives.push(archive);
+            if (archive) {
+              archives.push(archive);
+              console.log(`[CWL] war ${warTag}: state=${cwlWar.state} ${clanSide} vs ${oppSide} → archived`);
+            }
+
+            const current = mapCwlWarToCurrent(cwlWar, CLAN_TAG);
+            if (current) {
+              // Prefer inWar over preparation — only use preparation if no battle-phase war found yet.
+              if (activeCwlWar === null || current.war.state === 'battle') {
+                activeCwlWar = current;
+              }
+              console.log(`[CWL] war ${warTag}: state=${cwlWar.state} → current war (dashboard)`);
+            } else if (!archive) {
+              console.log(`[CWL] war ${warTag}: state=${cwlWar.state} ${clanSide} vs ${oppSide} → skipped`);
+            }
           } catch (e) {
-            console.warn(`CWL war ${warTag} skipped:`, e instanceof Error ? e.message : e);
+            console.warn(`[CWL] war ${warTag} skipped:`, e instanceof Error ? e.message : e);
           }
         }),
       );
+
+      // Update the War table with the current active CWL war so the dashboard shows it.
+      // /currentwar returns 403 during CWL, so this is the only source of current-war data.
+      await prisma.war.deleteMany({ where: { isCurrent: true } });
+      if (activeCwlWar) {
+        await prisma.war.create({
+          data: { ...activeCwlWar.war, members: { create: activeCwlWar.members } },
+        });
+        console.log(`[CWL] current war set: ${activeCwlWar.war.state} vs ${activeCwlWar.war.opponent}`);
+      } else {
+        console.log('[CWL] no active war found — War table cleared');
+      }
+
+      console.log(`[CWL] ${archives.length} wars to archive`);
       // Step 2: write to DB sequentially — avoids saturating the connection pool.
       for (const archive of archives) {
         await archiveWar(prisma, archive);
+        console.log(`[CWL] archived ${archive.record.warKey} (${archive.participations.length} participations)`);
       }
     } catch (e) {
       if (!(e instanceof CocApiError) || e.status !== 404) {
-        console.warn('CWL leaguegroup sync skipped:', e instanceof Error ? e.message : e);
+        console.warn('[CWL] leaguegroup sync skipped:', e instanceof Error ? e.message : e);
       }
       // 404 just means we're not in CWL this season
     }
