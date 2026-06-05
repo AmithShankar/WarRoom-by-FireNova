@@ -1,9 +1,9 @@
-import { z } from 'zod';
+import { PlayerStatus } from '@prisma/client';
 import { router, publicProcedure } from '../trpc';
 
 export const dashboardRouter = router({
   overview: publicProcedure.query(async ({ ctx }) => {
-    const active = { notIn: ['Kicked', 'Left'] } as const;
+    const active = { notIn: ['Kicked', 'Left'] as PlayerStatus[] };
     const [totalMembers, activeWarnings, sums, newJoinersPending] = await Promise.all([
       ctx.prisma.player.count({ where: { status: active } }),
       ctx.prisma.warning.count(),
