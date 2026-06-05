@@ -3,15 +3,22 @@ import { router, publicProcedure } from '../trpc';
 
 export const dashboardRouter = router({
   overview: publicProcedure.query(async ({ ctx }) => {
-    const players = await ctx.prisma.player.findMany();
-    const active = players.filter(p => p.status !== 'Kicked' && p.status !== 'Left');
-    const warnings = await ctx.prisma.warning.count();
+    const active = { notIn: ['Kicked', 'Left'] } as const;
+    const [totalMembers, activeWarnings, sums, newJoinersPending] = await Promise.all([
+      ctx.prisma.player.count({ where: { status: active } }),
+      ctx.prisma.warning.count(),
+      ctx.prisma.player.aggregate({
+        where: { status: active },
+        _sum: { cwlStars: true, donations: true, donationsReceived: true },
+      }),
+      ctx.prisma.player.count({ where: { status: active, postedChallenge: false } }),
+    ]);
     return {
-      totalMembers: active.length,
-      activeWarnings: warnings,
-      cwlStarsThisRound: active.reduce((s, p) => s + p.cwlStars, 0),
-      donationBalance: active.reduce((s, p) => s + p.donations - p.donationsReceived, 0),
-      newJoinersPending: active.filter(p => !p.postedChallenge).length,
+      totalMembers,
+      activeWarnings,
+      cwlStarsThisRound: sums._sum.cwlStars ?? 0,
+      donationBalance: (sums._sum.donations ?? 0) - (sums._sum.donationsReceived ?? 0),
+      newJoinersPending,
     };
   }),
 

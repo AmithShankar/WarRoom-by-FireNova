@@ -17,6 +17,55 @@ import {
 
 const CLAN_TAG = process.env.COC_CLAN_TAG ?? '';
 
+/**
+ * Recomputes the denormalised CWL stats on each Player from the current
+ * season's WarParticipation records (isCwl = true, endTime in same UTC month
+ * as the most-recently completed CWL war).
+ *
+ * Why we need this: Player.cwlStars/cwlAttacksUsed/cwlDestruction are read by
+ * the Roster and Dashboard but are never written by the CoC member-list sync.
+ * The Performance page reads from WarParticipation directly (correct), but
+ * Roster/Dashboard use these denormalised fields so we keep them in sync here.
+ */
+async function updatePlayerCwlStats(db: PrismaClient): Promise<void> {
+  const latestCwl = await db.warRecord.findFirst({
+    where: { isCwl: true },
+    orderBy: { endTime: 'desc' },
+    select: { endTime: true },
+  });
+  if (!latestCwl) return; // no CWL wars archived yet — leave fields at default 0
+
+  // Derive season window: the UTC calendar month of the most recent CWL war end.
+  const d = latestCwl.endTime;
+  const seasonStart = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), 1));
+  const seasonEnd   = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth() + 1, 1));
+
+  const stats = await db.warParticipation.groupBy({
+    by: ['playerTag'],
+    where: { warRecord: { isCwl: true, endTime: { gte: seasonStart, lt: seasonEnd } } },
+    _sum: { starsEarned: true, attacksUsed: true },
+    _avg: { destruction: true },
+  });
+
+  // Reset every player's CWL fields to 0, then apply current-season results.
+  await db.player.updateMany({ data: { cwlStars: 0, cwlAttacksUsed: 0, cwlDestruction: 0 } });
+
+  if (stats.length > 0) {
+    await Promise.all(
+      stats.map(s =>
+        db.player.updateMany({
+          where: { playerTag: s.playerTag },
+          data: {
+            cwlStars:        s._sum.starsEarned  ?? 0,
+            cwlAttacksUsed:  s._sum.attacksUsed  ?? 0,
+            cwlDestruction:  s._avg.destruction  ?? 0,
+          },
+        }),
+      ),
+    );
+  }
+}
+
 async function archiveWar(db: PrismaClient, archive: WarArchive): Promise<void> {
   const record = await db.warRecord.upsert({
     where: { warKey: archive.record.warKey },
@@ -133,6 +182,14 @@ export async function runSync(): Promise<{ membersSynced: number }> {
         console.warn('CWL leaguegroup sync skipped:', e instanceof Error ? e.message : e);
       }
       // 404 just means we're not in CWL this season
+    }
+
+    // Recompute denormalised CWL stats on Player from current-season WarParticipation.
+    // Runs unconditionally so any previously archived CWL data is always reflected.
+    try {
+      await updatePlayerCwlStats(prisma);
+    } catch (err) {
+      console.warn('CWL stats update step failed:', err instanceof Error ? err.message : err);
     }
 
     await prisma.syncLog.update({
