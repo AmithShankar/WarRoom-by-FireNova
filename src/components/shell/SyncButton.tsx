@@ -10,11 +10,23 @@ export function SyncButton() {
   const utils = trpc.useUtils();
   const status = trpc.sync.status.useQuery();
   const run = trpc.sync.run.useMutation({
-    onSuccess: () => {
+    onMutate: async () => {
+      // Cancel any in-flight dashboard queries so they don't race with the sync.
+      await Promise.all([
+        utils.dashboard.overview.cancel(),
+        utils.dashboard.currentWar.cancel(),
+        utils.dashboard.activity.cancel(),
+        utils.dashboard.lastWar.cancel(),
+        utils.sync.status.cancel(),
+      ]);
+    },
+    onSettled: () => {
       utils.roster.list.invalidate();
       utils.cwl.board.invalidate();
       utils.dashboard.overview.invalidate();
       utils.dashboard.currentWar.invalidate();
+      utils.dashboard.activity.invalidate();
+      utils.dashboard.lastWar.invalidate();
       utils.sync.status.invalidate();
     },
   });
