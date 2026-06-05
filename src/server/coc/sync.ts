@@ -202,7 +202,7 @@ export async function runSync(): Promise<{ membersSynced: number }> {
             const current = mapCwlWarToCurrent(cwlWar, CLAN_TAG);
             if (current) {
               // Prefer inWar over preparation — only use preparation if no battle-phase war found yet.
-              if (activeCwlWar === null || current.war.state === 'battle') {
+              if (activeCwlWar === null || cwlWar.state === 'inWar') {
                 activeCwlWar = current;
               }
               console.log(`[CWL] war ${warTag}: state=${cwlWar.state} → current war (dashboard)`);
