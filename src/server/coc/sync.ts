@@ -150,17 +150,27 @@ export async function runSync(): Promise<{ membersSynced: number }> {
       ]);
     }
 
-    const warRaw = await cocGet<unknown>(`/clans/${CLAN_TAG}/currentwar`);
-    const parsedWar = cocCurrentWarResponse.parse(warRaw);
-    const mapped = mapCurrentWar(parsedWar);
-    await prisma.war.deleteMany({ where: { isCurrent: true } }); // cascades WarMember rows
-    if (mapped) {
-      await prisma.war.create({
-        data: { ...mapped.war, members: { create: mapped.members } },
-      });
+    // currentwar returns 403 when war log is private or during CWL season.
+    // Wrap in try-catch so a 403 here doesn't crash the entire sync.
+    try {
+      const warRaw = await cocGet<unknown>(`/clans/${CLAN_TAG}/currentwar`);
+      const parsedWar = cocCurrentWarResponse.parse(warRaw);
+      const mapped = mapCurrentWar(parsedWar);
+      await prisma.war.deleteMany({ where: { isCurrent: true } }); // cascades WarMember rows
+      if (mapped) {
+        await prisma.war.create({
+          data: { ...mapped.war, members: { create: mapped.members } },
+        });
+      }
+      const endedRegular = mapEndedWarToRecord(parsedWar);
+      if (endedRegular) await archiveWar(prisma, endedRegular);
+    } catch (e) {
+      if (e instanceof CocApiError && e.status === 403) {
+        // Private war log or CWL season restriction — skip regular war sync silently.
+      } else {
+        console.warn('Current war sync failed:', e instanceof Error ? e.message : e);
+      }
     }
-    const endedRegular = mapEndedWarToRecord(parsedWar);
-    if (endedRegular) await archiveWar(prisma, endedRegular);
 
     try {
       const groupRaw = await cocGet<unknown>(`/clans/${CLAN_TAG}/currentwar/leaguegroup`);
