@@ -36,4 +36,10 @@ describe('raidRowsToWrite', () => {
     const out = raidRowsToWrite([old, live, fresh], [old.seasonStart, live.seasonStart], now);
     expect(out).toEqual([live, fresh]);
   });
+  it('keeps refreshing a stored season for 6 hours after it ends', () => {
+    const justEnded = { seasonStart: new Date('2026-10-27T07:00:00Z'), seasonEnd: new Date('2026-10-30T22:00:00Z') };
+    const endedLongAgo = { seasonStart: new Date('2026-10-27T07:00:00Z'), seasonEnd: new Date('2026-10-30T17:00:00Z') };
+    expect(raidRowsToWrite([justEnded], [justEnded.seasonStart], now)).toEqual([justEnded]);
+    expect(raidRowsToWrite([endedLongAgo], [endedLongAgo.seasonStart], now)).toEqual([]);
+  });
 });

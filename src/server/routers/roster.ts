@@ -45,6 +45,16 @@ export function canMarkStayingByActivity(status: PlayerStatus): boolean {
   return status === 'New' || status === 'Warned';
 }
 
+/** Status once a warning is removed: a Warned player with none left goes back to New or Staying. */
+export function statusAfterWarningRemoved(
+  status: PlayerStatus,
+  remainingWarnings: number,
+  postedChallenge: boolean,
+): PlayerStatus {
+  if (status !== 'Warned' || remainingWarnings > 0) return status;
+  return postedChallenge ? 'Staying' : 'New';
+}
+
 export const rosterRouter = router({
   list: publicProcedure.query(({ ctx }) =>
     ctx.prisma.player.findMany({
@@ -83,6 +93,31 @@ export const rosterRouter = router({
     }
     return { ok: true };
   }),
+
+  removeWarning: publicProcedure
+    .input(z.object({ warningId: z.string() }))
+    .mutation(async ({ ctx, input }) => {
+      const warning = await ctx.prisma.warning.findUniqueOrThrow({
+        where: { id: input.warningId },
+        include: { player: true },
+      });
+      const { player } = warning;
+      await ctx.prisma.warning.delete({ where: { id: warning.id } });
+      await ctx.prisma.clanActivity.create({
+        data: {
+          date: new Date(),
+          type: 'warning',
+          player: player.name,
+          summary: `${player.name} warning for ${REASON_DISPLAY[warning.reason]} removed`,
+        },
+      });
+      const remaining = await ctx.prisma.warning.count({ where: { playerId: player.id } });
+      const status = statusAfterWarningRemoved(player.status, remaining, player.postedChallenge);
+      if (status !== player.status) {
+        await ctx.prisma.player.update({ where: { id: player.id }, data: { status } });
+      }
+      return { ok: true };
+    }),
 
   kickPlayer: publicProcedure
     .input(z.object({ playerTag: z.string(), reason: z.string().min(1) }))

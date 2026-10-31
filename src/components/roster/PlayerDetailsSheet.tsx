@@ -76,7 +76,10 @@ const StatTile = memo(function StatTile({
   );
 });
 
-const WarningTimelineItem = memo(function WarningTimelineItem({ w, now }: { w: Warning; now: number }) {
+const WarningTimelineItem = memo(function WarningTimelineItem({
+  w, now, onRemove, removing,
+}: { w: Warning; now: number; onRemove: (id: string) => void; removing: boolean }) {
+  const [confirmOpen, setConfirmOpen] = useState(false);
   const expired = w.expirationDate
     ? new Date(w.expirationDate).getTime() < now
     : false;
@@ -132,6 +135,36 @@ const WarningTimelineItem = memo(function WarningTimelineItem({ w, now }: { w: W
             </span>
           </div>
         )}
+        <div className="mt-2 flex justify-end">
+          <Popover open={confirmOpen} onOpenChange={setConfirmOpen}>
+            <PopoverTrigger asChild>
+              <button
+                type="button"
+                disabled={removing}
+                className="cursor-pointer text-[11px] text-text-3 hover:text-red-500 disabled:opacity-50"
+              >
+                Remove
+              </button>
+            </PopoverTrigger>
+            <PopoverContent align="end">
+              <div className="space-y-3">
+                <div>
+                  <div className="text-sm font-medium text-text-1">Remove this warning?</div>
+                  <p className="mt-0.5 text-[11px] text-text-3">
+                    It is deleted for good. If it is the player&apos;s last warning, their status goes back
+                    to New or Staying.
+                  </p>
+                </div>
+                <div className="flex justify-end gap-2">
+                  <Button variant="ghost" onClick={() => setConfirmOpen(false)}>Cancel</Button>
+                  <Button variant="danger" onClick={() => { onRemove(w.id); setConfirmOpen(false); }}>
+                    Remove warning
+                  </Button>
+                </div>
+              </div>
+            </PopoverContent>
+          </Popover>
+        </div>
       </div>
     </li>
   );
@@ -268,6 +301,16 @@ export function PlayerDetailsSheet({
     onSuccess: () => utils.roster.list.invalidate(),
   });
 
+  const removeWarning = trpc.roster.removeWarning.useMutation({
+    onSuccess: () => {
+      utils.roster.list.invalidate();
+      utils.dashboard.overview.invalidate();
+      utils.dashboard.activity.invalidate();
+      toast.success('Warning removed');
+    },
+    onError: () => toast.error('Could not remove the warning'),
+  });
+
   const [activityOpen, setActivityOpen] = useState(false);
   const [activityValue, setActivityValue] = useState('');
 
@@ -287,6 +330,7 @@ export function PlayerDetailsSheet({
   const [duration, setDuration] = useState<number | null>(48);
   const [reason, setReason] = useState<WarningReason>('Missed War Attack');
   const [notes, setNotes] = useState('');
+  const [confirmOpen, setConfirmOpen] = useState(false);
   const [ctx, setCtx] = useState<WarWarningContext>({
     warPerfected: false,
     mirrorCleared: false,
@@ -471,7 +515,15 @@ export function PlayerDetailsSheet({
                 </div>
               ) : (
                 <ol className="relative space-y-3 border-l border-border-1 pl-3">
-                  {player.warnings.map(w => <WarningTimelineItem key={w.id} w={w} now={now} />)}
+                  {player.warnings.map(w => (
+                    <WarningTimelineItem
+                      key={w.id}
+                      w={w}
+                      now={now}
+                      onRemove={id => removeWarning.mutate({ warningId: id })}
+                      removing={removeWarning.isPending}
+                    />
+                  ))}
                 </ol>
               )}
             </TabsContent>
@@ -661,13 +713,28 @@ export function PlayerDetailsSheet({
               <ShieldCheck className="h-4 w-4" /> Mark Challenge Posted
             </Button>
           )}
-          <Button
-            onClick={submit}
-            className="sm:w-auto"
-            disabled={isFailedChallenge && duration == null}
-          >
-            <AlertTriangle className="h-4 w-4" /> Issue Warning
-          </Button>
+          <Popover open={confirmOpen} onOpenChange={setConfirmOpen}>
+            <PopoverTrigger asChild>
+              <Button className="sm:w-auto" disabled={isFailedChallenge && duration == null}>
+                <AlertTriangle className="h-4 w-4" /> Issue Warning
+              </Button>
+            </PopoverTrigger>
+            <PopoverContent align="end">
+              <div className="space-y-3">
+                <div>
+                  <div className="text-sm font-medium text-text-1">Warn {player.name}?</div>
+                  <p className="mt-0.5 text-[11px] text-text-3">
+                    {reason}{duration != null ? `, expires in ${duration}h` : ', no expiry'}.
+                    Change these in the Issue Warning tab first if needed.
+                  </p>
+                </div>
+                <div className="flex justify-end gap-2">
+                  <Button variant="ghost" onClick={() => setConfirmOpen(false)}>Cancel</Button>
+                  <Button onClick={() => { submit(); setConfirmOpen(false); }}>Issue warning</Button>
+                </div>
+              </div>
+            </PopoverContent>
+          </Popover>
         </SheetFooter>
       </SheetContent>
     </Sheet>

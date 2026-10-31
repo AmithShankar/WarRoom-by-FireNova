@@ -29,12 +29,17 @@ export function raidTable(
     .sort((a, b) => b.looted - a.looted);
 }
 
-/** Rows worth writing: skip seasons already stored whose weekend has ended. */
+// Keep refreshing a finished weekend for a while so attacks made after the last
+// pre-end sync are still captured.
+const RAID_REFRESH_AFTER_END_MS = 6 * 60 * 60_000;
+
+/** Rows worth writing: skip seasons already stored whose weekend ended over 6 hours ago. */
 export function raidRowsToWrite<T extends { seasonStart: Date; seasonEnd: Date }>(
   rows: T[],
   storedStarts: Date[],
   now: Date,
 ): T[] {
   const stored = new Set(storedStarts.map(d => d.getTime()));
-  return rows.filter(r => !(stored.has(r.seasonStart.getTime()) && r.seasonEnd.getTime() < now.getTime()));
+  const cutoff = now.getTime() - RAID_REFRESH_AFTER_END_MS;
+  return rows.filter(r => !(stored.has(r.seasonStart.getTime()) && r.seasonEnd.getTime() < cutoff));
 }

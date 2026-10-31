@@ -7,7 +7,10 @@ export const dashboardRouter = router({
     const active = { notIn: ['Kicked', 'Left'] as PlayerStatus[] };
     const [totalMembers, activeWarnings, sums, newJoinersPending] = await Promise.all([
       ctx.prisma.player.count({ where: { status: active } }),
-      ctx.prisma.warning.count(),
+      // Only warnings that have not expired yet; no expiry date means it never expires.
+      ctx.prisma.warning.count({
+        where: { OR: [{ expirationDate: null }, { expirationDate: { gt: new Date() } }] },
+      }),
       ctx.prisma.player.aggregate({
         where: { status: active },
         _sum: { cwlStars: true, donations: true, donationsReceived: true },
