@@ -1,5 +1,5 @@
 import type { Role, WarState } from '@/lib/prisma';
-import type { CocMember, CocCurrentWar, CocClanWarLeagueWar } from './schemas';
+import type { CocMember, CocCurrentWar, CocClanWarLeagueWar, CocRaidSeasons } from './schemas';
 import { determineResult } from '@/lib/performance';
 
 const ROLE_MAP: Record<CocMember['role'], Role> = {
@@ -22,7 +22,7 @@ const WAR_STATE_MAP: Record<CocCurrentWar['state'], WarState | null> = {
 };
 
 // CoC timestamps are `20260521T100000.000Z` — not ISO 8601, Date() can't parse it
-function parseCocDate(s: string | undefined): Date {
+export function parseCocDate(s: string | undefined): Date {
   if (!s) return new Date();
   const m = /^(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})(\d{2})/.exec(s);
   if (!m) {
@@ -256,3 +256,23 @@ export function mapCwlWarToRecord(
   };
 }
 
+export type RaidRow = {
+  seasonStart: Date; seasonEnd: Date; playerTag: string; name: string;
+  attacks: number; attackLimit: number; looted: number;
+};
+
+export function mapRaidSeasons(r: CocRaidSeasons): RaidRow[] {
+  return r.items.flatMap(season => {
+    const seasonStart = parseCocDate(season.startTime);
+    const seasonEnd = parseCocDate(season.endTime);
+    return (season.members ?? []).map(m => ({
+      seasonStart,
+      seasonEnd,
+      playerTag: m.tag,
+      name: m.name,
+      attacks: m.attacks,
+      attackLimit: m.attackLimit + (m.bonusAttackLimit ?? 0),
+      looted: m.capitalResourcesLooted,
+    }));
+  });
+}

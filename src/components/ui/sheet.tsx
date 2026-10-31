@@ -5,6 +5,7 @@ import * as DialogPrimitive from '@radix-ui/react-dialog';
 import { X } from 'lucide-react';
 import { cva, type VariantProps } from 'class-variance-authority';
 import { cn } from '@/lib/utils';
+import { getBackStack } from '@/lib/back-stack';
 
 // Standard Radix Dialog mount/unmount - NO forceMount.
 //
@@ -17,7 +18,37 @@ import { cn } from '@/lib/utils';
 //
 // (forceMount kept those internals permanently mounted, so cleanup never ran
 // and closed Sheets silently froze every click on the page.)
-export const Sheet = DialogPrimitive.Root;
+//
+// While open, a Sheet owns one history entry so the system back button (installed
+// PWA on mobile) closes the top Sheet instead of leaving the app.
+export function Sheet({ open, onOpenChange, ...props }: React.ComponentProps<typeof DialogPrimitive.Root>) {
+  const onOpenChangeRef = React.useRef(onOpenChange);
+  React.useEffect(() => {
+    onOpenChangeRef.current = onOpenChange;
+  });
+
+  const entryRef = React.useRef<{ release: () => void; timer?: ReturnType<typeof setTimeout> } | null>(null);
+  React.useEffect(() => {
+    if (!open) return;
+    const pending = entryRef.current;
+    if (pending?.timer !== undefined) {
+      // StrictMode remount: keep the entry from the first mount instead of popping and pushing again.
+      clearTimeout(pending.timer);
+      pending.timer = undefined;
+    } else {
+      entryRef.current = { release: getBackStack().open(() => onOpenChangeRef.current?.(false)) };
+    }
+    return () => {
+      const entry = entryRef.current!;
+      entry.timer = setTimeout(() => {
+        if (entryRef.current === entry) entryRef.current = null;
+        entry.release();
+      }, 0);
+    };
+  }, [open]);
+
+  return <DialogPrimitive.Root open={open} onOpenChange={onOpenChange} {...props} />;
+}
 export const SheetTrigger = DialogPrimitive.Trigger;
 export const SheetClose = DialogPrimitive.Close;
 export const SheetPortal = DialogPrimitive.Portal;

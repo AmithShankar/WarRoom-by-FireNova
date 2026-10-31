@@ -54,7 +54,27 @@ export const cocClanWarLeagueWar = z.object({
   opponent: cocWarClan,
 });
 
+export const cocRaidSeasonsResponse = z.object({
+  items: z.array(z.object({
+    startTime: z.string(),
+    endTime: z.string(),
+    members: z.array(z.object({
+      tag: z.string(),
+      name: z.string(),
+      attacks: z.number(),
+      attackLimit: z.number(),
+      bonusAttackLimit: z.number().default(0),
+      capitalResourcesLooted: z.number(),
+    })).optional(),
+  })),
+});
+
+export const cocPlayerResponse = z.object({
+  achievements: z.array(z.object({ name: z.string(), value: z.number() })).default([]),
+});
+
 export type CocMember = z.infer<typeof cocMemberSchema>;
 export type CocCurrentWar = z.infer<typeof cocCurrentWarResponse>;
 export type CocLeagueGroup = z.infer<typeof cocLeagueGroupResponse>;
 export type CocClanWarLeagueWar = z.infer<typeof cocClanWarLeagueWar>;
+export type CocRaidSeasons = z.input<typeof cocRaidSeasonsResponse>;

@@ -1,10 +1,13 @@
 'use client';
 
+import { useEffect, useRef } from 'react';
+import { useIsRestoring } from '@tanstack/react-query';
 import { RefreshCw } from 'lucide-react';
 import { formatDistanceToNowStrict } from 'date-fns';
 import { Button } from '@/components/ui/button';
 import { trpc } from '@/lib/trpc';
 import { cn } from '@/lib/utils';
+import { isStale } from '@/lib/sync-timing';
 
 export function SyncButton() {
   const utils = trpc.useUtils();
@@ -30,6 +33,18 @@ export function SyncButton() {
       utils.sync.status.invalidate();
     },
   });
+
+  // Sync once per app open when the data is stale, after the status first loads.
+  const isRestoring = useIsRestoring();
+  const autoSynced = useRef(false);
+  useEffect(() => {
+    // Wait for the persisted cache restore and a fresh status fetch before deciding.
+    if (autoSynced.current || isRestoring || !status.isFetchedAfterMount || status.isFetching || run.isPending) return;
+    autoSynced.current = true;
+    if (status.isSuccess && isStale(status.data?.finishedAt ? new Date(status.data.finishedAt) : null, new Date())) {
+      run.mutate();
+    }
+  }, [isRestoring, status.isFetchedAfterMount, status.isFetching, status.isSuccess, status.data, run]);
 
   const last = status.data?.finishedAt;
   return (

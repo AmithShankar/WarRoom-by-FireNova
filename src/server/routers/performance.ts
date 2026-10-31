@@ -1,6 +1,10 @@
 import { z } from 'zod';
 import { router, publicProcedure } from '../trpc';
-import { aggregatePerformance, type ParticipationRow } from '@/lib/performance';
+import {
+  aggregatePerformance,
+  onlyCurrentMembers,
+  type ParticipationRow,
+} from '@/lib/performance';
 import type { prisma } from '@/lib/prisma';
 
 const scope = z.enum(['all', 'regular', 'cwl']);
@@ -26,7 +30,12 @@ export const performanceRouter = router({
     .input(z.object({ scope }).optional())
     .query(async ({ ctx, input }) => {
       const rows = await loadRows(ctx.prisma, input?.scope ?? 'all');
-      return aggregatePerformance(rows);
+      const members = await ctx.prisma.player.findMany({
+        where: { status: { notIn: ['Kicked', 'Left'] } },
+        select: { playerTag: true },
+      });
+      const memberTags = new Set(members.map(m => m.playerTag));
+      return aggregatePerformance(onlyCurrentMembers(rows, memberTags));
     }),
 
   forPlayer: publicProcedure

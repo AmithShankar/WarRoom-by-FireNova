@@ -7,6 +7,16 @@ import { trpc } from '@/lib/trpc';
 import { TableSkeleton } from '@/components/skeletons/PageSkeletons';
 import { QueryError } from '@/components/ui/QueryError';
 import type { PerformanceScope } from '@/lib/types';
+import { RaidWeekendsTable } from '@/components/performance/RaidWeekendsTable';
+import { ClanGamesTable } from '@/components/performance/ClanGamesTable';
+
+type View = 'wars' | 'raids' | 'games';
+
+const VIEWS: { value: View; label: string }[] = [
+  { value: 'wars', label: 'Wars' },
+  { value: 'raids', label: 'Raid Weekends' },
+  { value: 'games', label: 'Clan Games' },
+];
 
 const SCOPES: { value: PerformanceScope; label: string }[] = [
   { value: 'all', label: 'All Wars' },
@@ -17,6 +27,43 @@ const SCOPES: { value: PerformanceScope; label: string }[] = [
 type SortKey = 'totalStars' | 'threeStarRate' | 'avgDestruction' | 'attacksUsed' | 'missedAttacks';
 
 export default function PerformancePage() {
+  const [view, setView] = useState<View>('wars');
+
+  return (
+    <div className="space-y-5">
+      <header>
+        <h2 className="text-xl font-semibold tracking-tight text-text-1 md:text-2xl">
+          Performance
+        </h2>
+        <p className="text-sm text-text-2">
+          Per-player war and CWL results, raid weekend attacks and clan games points.
+        </p>
+      </header>
+
+      <div className="flex flex-wrap gap-2">
+        {VIEWS.map(v => (
+          <button
+            key={v.value}
+            type="button"
+            onClick={() => setView(v.value)}
+            className={cn(
+              'cursor-pointer rounded-lg border px-3 py-1.5 text-sm transition-colors',
+              view === v.value
+                ? 'border-brand-from/40 bg-brand-from/10 text-brand-from'
+                : 'border-border-1 bg-surface-1 text-text-2 hover:border-border-strong',
+            )}
+          >
+            {v.label}
+          </button>
+        ))}
+      </div>
+
+      {view === 'wars' ? <WarsView /> : view === 'raids' ? <RaidWeekendsTable /> : <ClanGamesTable />}
+    </div>
+  );
+}
+
+function WarsView() {
   const [scope, setScope] = useState<PerformanceScope>('all');
   const [sortKey, setSortKey] = useState<SortKey>('totalStars');
   const query = trpc.performance.leaderboard.useQuery({ scope });
@@ -27,16 +74,7 @@ export default function PerformancePage() {
   }, [query.data, sortKey]);
 
   return (
-    <div className="space-y-5">
-      <header>
-        <h2 className="text-xl font-semibold tracking-tight text-text-1 md:text-2xl">
-          Performance
-        </h2>
-        <p className="text-sm text-text-2">
-          Per-player war and CWL performance, accumulated as wars complete.
-        </p>
-      </header>
-
+    <>
       <div className="flex gap-2">
         {SCOPES.map(s => (
           <button
@@ -129,6 +167,6 @@ export default function PerformancePage() {
           </div>
         </Card>
       )}
-    </div>
+    </>
   );
 }

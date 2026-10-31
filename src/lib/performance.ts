@@ -25,6 +25,14 @@ export type PlayerPerformance = {
   excusedMisses: number;
 };
 
+/** Keep only rows for players who are still in the clan. */
+export function onlyCurrentMembers(
+  rows: ParticipationRow[],
+  memberTags: Set<string>,
+): ParticipationRow[] {
+  return rows.filter(r => memberTags.has(r.playerTag));
+}
+
 /** Aggregate participation rows into one PlayerPerformance per player. */
 export function aggregatePerformance(rows: ParticipationRow[]): PlayerPerformance[] {
   const byTag = new Map<string, PlayerPerformance>();

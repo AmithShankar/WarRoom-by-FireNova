@@ -221,3 +221,26 @@ model WarParticipation {
   @@unique([warRecordId, playerTag])
   @@index([playerTag])
 }
+
+model RaidParticipation {
+  id           String   @id @default(cuid())
+  seasonStart  DateTime
+  seasonEnd    DateTime
+  playerTag    String
+  name         String
+  attacks      Int
+  attackLimit  Int
+  looted       Int
+
+  @@unique([seasonStart, playerTag])
+  @@index([playerTag])
+}
+
+model ClanGamesSnapshot {
+  id        String   @id @default(cuid())
+  playerTag String
+  value     Int
+  takenAt   DateTime @default(now())
+
+  @@index([playerTag, takenAt])
+}

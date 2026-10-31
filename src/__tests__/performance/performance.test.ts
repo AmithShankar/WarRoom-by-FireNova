@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { aggregatePerformance, determineResult } from '@/lib/performance';
+import { aggregatePerformance, determineResult, onlyCurrentMembers } from '@/lib/performance';
 import type { ParticipationRow } from '@/lib/performance';
 
 const row = (over: Partial<ParticipationRow>): ParticipationRow => ({
@@ -50,6 +50,13 @@ describe('aggregatePerformance excused misses', () => {
     const out = aggregatePerformance([row({ attacksUsed: 1, attacksTotal: 2, excused: false })]);
     expect(out[0].missedAttacks).toBe(1);
     expect(out[0].excusedMisses).toBe(0);
+  });
+});
+
+describe('onlyCurrentMembers', () => {
+  it('drops rows for players no longer in the clan', () => {
+    const rows = [row({ playerTag: '#A' }), row({ playerTag: '#LEFT' })];
+    expect(onlyCurrentMembers(rows, new Set(['#A'])).map(r => r.playerTag)).toEqual(['#A']);
   });
 });
 

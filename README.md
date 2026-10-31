@@ -27,7 +27,7 @@ Create `.env.local` with:
 DATABASE_URL=                         # Postgres connection string
 COC_API_TOKEN=                        # Token from developer.clashofclans.com
 COC_CLAN_TAG=                         # Your clan tag (e.g. #ABC123)
-CRON_SECRET=                          # Must match the GitHub Actions repository secret
+CRON_SECRET=                          # Must match the cron-job.org Authorization header
 NEXT_PUBLIC_VAPID_PUBLIC_KEY=         # From: npx web-push generate-vapid-keys
 VAPID_PRIVATE_KEY=                    # From: npx web-push generate-vapid-keys
 VAPID_EMAIL=                          # mailto:your-email@example.com
@@ -54,7 +54,7 @@ Migrations live in `prisma/migrations/`. Apply locally with:
 pnpm exec prisma migrate dev
 ```
 
-Vercel runs `prisma migrate deploy` automatically on each deploy via the `build` script.
+Apply to production with `pnpm run migrate` (`prisma migrate deploy`) against the direct database URL. The build does not run migrations.
 
 To seed from live CoC data:
 
@@ -69,13 +69,25 @@ There are two war data models:
 
 ## Sync
 
-A GitHub Actions workflow (`.github/workflows/sync.yml`) calls the sync endpoint every 30 minutes so data stays fresh and push notifications fire on time even when nobody has the app open.
+A scheduled job calls the sync endpoint every 30 minutes so data stays fresh and push notifications fire on time even when nobody has the app open. See [Scheduled sync](#scheduled-sync).
 
 To force an immediate sync (or to trigger a sync locally during development):
 
 ```bash
 curl -H "Authorization: Bearer <CRON_SECRET>" https://war-room-by-fire-nova.vercel.app/api/cron/sync
 ```
+
+## Scheduled sync
+
+The sync runs on cron-job.org (free). Create a job with:
+
+- URL: `https://war-room-by-fire-nova.vercel.app/api/cron/sync`
+- Method: GET
+- Header: `Authorization: Bearer <CRON_SECRET>`
+- Schedule: every 30 minutes
+- Notifications: enable failure notifications
+
+Migrations are not applied on deploy. Run `pnpm run migrate` against the direct (non pooled) database URL before deploying a change that includes a new migration.
 
 ## Push Notifications
 
@@ -85,7 +97,7 @@ Warning expiry notifications are sent to all subscribed devices at the end of ea
 npx web-push generate-vapid-keys
 ```
 
-Add `NEXT_PUBLIC_VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, and `VAPID_EMAIL` to both `.env.local` and Vercel. Add `CRON_SECRET` to both your Vercel environment and the GitHub Actions repository secret (Settings > Secrets and variables > Actions).
+Add `NEXT_PUBLIC_VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, and `VAPID_EMAIL` to both `.env.local` and Vercel. Add `CRON_SECRET` to your Vercel environment and use the same value in the cron-job.org job (see [Scheduled sync](#scheduled-sync)).
 
 Users enable notifications by clicking the bell icon in the top bar. iOS users must install the app first (Add to Home Screen) before the permission prompt is available.
 
@@ -95,4 +107,4 @@ Users enable notifications by clicking the bell icon in the top bar. iOS users m
 pnpm test
 ```
 
-Vitest, unit tests only (no DB). 51 tests covering war result mapping, CSV import/export, validation, roster filtering, and push notification payload building.
+Vitest, unit tests only (no DB). The test suite covers war result mapping, CSV import/export, validation, roster filtering, and push notification payload building.

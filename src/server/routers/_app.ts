@@ -4,6 +4,7 @@ import { cwlRouter } from './cwl';
 import { dashboardRouter } from './dashboard';
 import { syncRouter } from './sync';
 import { performanceRouter } from './performance';
+import { eventsRouter } from './events';
 
 export const appRouter = router({
   roster: rosterRouter,
@@ -11,6 +12,7 @@ export const appRouter = router({
   dashboard: dashboardRouter,
   sync: syncRouter,
   performance: performanceRouter,
+  events: eventsRouter,
 });
 
 export type AppRouter = typeof appRouter;

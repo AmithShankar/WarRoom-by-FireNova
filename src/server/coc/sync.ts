@@ -1,4 +1,8 @@
 import { prisma, type PrismaClient } from '@/lib/prisma';
+import { mapWithLimit } from '@/lib/concurrency';
+import { shouldSnapshot } from '@/lib/clan-games';
+import { raidRowsToWrite } from '@/lib/events';
+import { isSyncInProgress } from '@/lib/sync-timing';
 import { cocGet, CocApiError } from './client';
 import { sendExpiryNotification, toReadableReason } from './push';
 import {
@@ -6,6 +10,8 @@ import {
   cocCurrentWarResponse,
   cocLeagueGroupResponse,
   cocClanWarLeagueWar,
+  cocRaidSeasonsResponse,
+  cocPlayerResponse,
 } from './schemas';
 import {
   mapMemberToPlayer,
@@ -13,6 +19,7 @@ import {
   mapEndedWarToRecord,
   mapCwlWarToRecord,
   mapCwlWarToCurrent,
+  mapRaidSeasons,
   type WarArchive,
   type CwlCurrentWarResult,
 } from './map';
@@ -88,12 +95,27 @@ async function archiveWar(db: PrismaClient, archive: WarArchive): Promise<void> 
   }
 }
 
-export async function runSync(): Promise<{ membersSynced: number }> {
+export async function runSync(): Promise<{ membersSynced: number; skipped?: true }> {
+  const latest = await prisma.syncLog.findFirst({
+    orderBy: { startedAt: 'desc' },
+    select: { startedAt: true, finishedAt: true },
+  });
+  if (isSyncInProgress(latest, new Date())) return { membersSynced: 0, skipped: true };
+
   const log = await prisma.syncLog.create({ data: { status: 'success' } });
   try {
     if (!CLAN_TAG) throw new Error('COC_CLAN_TAG is not set');
 
-    const membersRaw = await cocGet<unknown>(`/clans/${CLAN_TAG}/members`);
+    // Start the four independent CoC fetches together; results are handled in the original order below.
+    const [membersResult, warResult, groupResult, raidResult] = await Promise.allSettled([
+      cocGet<unknown>(`/clans/${CLAN_TAG}/members`),
+      cocGet<unknown>(`/clans/${CLAN_TAG}/currentwar`),
+      cocGet<unknown>(`/clans/${CLAN_TAG}/currentwar/leaguegroup`),
+      cocGet<unknown>(`/clans/${CLAN_TAG}/capitalraidseasons?limit=10`),
+    ]);
+
+    if (membersResult.status === 'rejected') throw membersResult.reason;
+    const membersRaw = membersResult.value;
     const { items } = cocMembersResponse.parse(membersRaw);
     const seenTags = new Set(items.map(m => m.tag));
 
@@ -104,8 +126,7 @@ export async function runSync(): Promise<{ membersSynced: number }> {
     });
     const existingByTag = new Map(existingPlayers.map(p => [p.playerTag, p]));
 
-    const joinActivity: { date: Date; type: string; player: string; summary: string }[] = [];
-    for (const m of items) {
+    const activities = await mapWithLimit(items, 5, async m => {
       const cocFields = mapMemberToPlayer(m);
       const existing = existingByTag.get(m.tag);
       const isRejoin = existing?.status === 'Left' || existing?.status === 'Kicked';
@@ -120,11 +141,14 @@ export async function runSync(): Promise<{ membersSynced: number }> {
         create: { playerTag: m.tag, joinedAt: new Date(), ...cocFields },
       });
       if (!existing) {
-        joinActivity.push({ date: new Date(), type: 'join', player: m.name, summary: `${m.name} joined the clan` });
-      } else if (isRejoin) {
-        joinActivity.push({ date: new Date(), type: 'join', player: m.name, summary: `${m.name} rejoined the clan` });
+        return { date: new Date(), type: 'join', player: m.name, summary: `${m.name} joined the clan` };
       }
-    }
+      if (isRejoin) {
+        return { date: new Date(), type: 'join', player: m.name, summary: `${m.name} rejoined the clan` };
+      }
+      return null;
+    });
+    const joinActivity = activities.filter((a): a is NonNullable<typeof a> => a !== null);
     if (joinActivity.length > 0) {
       await prisma.clanActivity.createMany({ data: joinActivity });
     }
@@ -155,7 +179,8 @@ export async function runSync(): Promise<{ membersSynced: number }> {
     // currentwar returns 403 when war log is private or during CWL season.
     // Wrap in try-catch so a 403 here doesn't crash the entire sync.
     try {
-      const warRaw = await cocGet<unknown>(`/clans/${CLAN_TAG}/currentwar`);
+      if (warResult.status === 'rejected') throw warResult.reason;
+      const warRaw = warResult.value;
       const parsedWar = cocCurrentWarResponse.parse(warRaw);
       const mapped = mapCurrentWar(parsedWar);
       await prisma.war.deleteMany({ where: { isCurrent: true } }); // cascades WarMember rows
@@ -175,7 +200,8 @@ export async function runSync(): Promise<{ membersSynced: number }> {
     }
 
     try {
-      const groupRaw = await cocGet<unknown>(`/clans/${CLAN_TAG}/currentwar/leaguegroup`);
+      if (groupResult.status === 'rejected') throw groupResult.reason;
+      const groupRaw = groupResult.value;
       const group = cocLeagueGroupResponse.parse(groupRaw);
       const allWarTags = group.rounds.flatMap(r => r.warTags);
       // Pair each warTag with its 1-based day number (round index + 1).
@@ -246,6 +272,52 @@ export async function runSync(): Promise<{ membersSynced: number }> {
         console.warn('[CWL] leaguegroup sync skipped:', e instanceof Error ? e.message : e);
       }
       // 404 just means we're not in CWL this season
+    }
+
+    // Raid weekend results per player; failures only warn.
+    try {
+      if (raidResult.status === 'rejected') throw raidResult.reason;
+      const stored = await prisma.raidParticipation.findMany({
+        distinct: ['seasonStart'],
+        select: { seasonStart: true },
+      });
+      const rows = raidRowsToWrite(
+        mapRaidSeasons(cocRaidSeasonsResponse.parse(raidResult.value)),
+        stored.map(s => s.seasonStart),
+        new Date(),
+      );
+      await mapWithLimit(rows, 5, row =>
+        prisma.raidParticipation.upsert({
+          where: { seasonStart_playerTag: { seasonStart: row.seasonStart, playerTag: row.playerTag } },
+          update: row,
+          create: row,
+        }),
+      );
+    } catch (e) {
+      console.warn('Raid sync failed:', e instanceof Error ? e.message : e);
+    }
+
+    // Clan games has no API: snapshot each member's cumulative Games Champion achievement.
+    try {
+      const last = await prisma.clanGamesSnapshot.findFirst({
+        orderBy: { takenAt: 'desc' },
+        select: { takenAt: true },
+      });
+      if (shouldSnapshot(new Date(), last?.takenAt ?? null)) {
+        const snaps = await mapWithLimit(items.map(m => m.tag), 5, async playerTag => {
+          try {
+            const raw = await cocGet<unknown>(`/players/${playerTag}`);
+            const champ = cocPlayerResponse.parse(raw).achievements.find(a => a.name === 'Games Champion');
+            return champ ? { playerTag, value: champ.value } : null;
+          } catch {
+            return null;
+          }
+        });
+        const data = snaps.filter((s): s is NonNullable<typeof s> => s !== null);
+        if (data.length > 0) await prisma.clanGamesSnapshot.createMany({ data });
+      }
+    } catch (e) {
+      console.warn('Clan games snapshot failed:', e instanceof Error ? e.message : e);
     }
 
     // Recompute denormalised CWL stats on Player from current-season WarParticipation.
