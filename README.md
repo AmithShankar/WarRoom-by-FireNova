@@ -74,14 +74,14 @@ A scheduled job calls the sync endpoint every 30 minutes so data stays fresh and
 To force an immediate sync (or to trigger a sync locally during development):
 
 ```bash
-curl -H "Authorization: Bearer <CRON_SECRET>" https://war-room-by-fire-nova.vercel.app/api/cron/sync
+curl -H "Authorization: Bearer <CRON_SECRET>" http://localhost:3000/api/cron/sync
 ```
 
 ## Scheduled sync
 
 The sync runs on cron-job.org (free). Create a job with:
 
-- URL: `https://war-room-by-fire-nova.vercel.app/api/cron/sync`
+- URL: `https://<your-deployment-url>/api/cron/sync`
 - Method: GET
 - Header: `Authorization: Bearer <CRON_SECRET>`
 - Schedule: every 30 minutes
