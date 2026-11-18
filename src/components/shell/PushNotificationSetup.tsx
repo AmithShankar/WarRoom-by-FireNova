@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect } from 'react';
+import { trpc } from '@/lib/trpc';
 
 function urlBase64ToUint8Array(base64String: string): Uint8Array<ArrayBuffer> {
   const padding = '='.repeat((4 - (base64String.length % 4)) % 4);
@@ -45,8 +46,13 @@ async function syncSubscription(reg: ServiceWorkerRegistration): Promise<void> {
   });
 }
 
+// Push registration needs a signed-in Leader / Co-Leader: the server owns each row by player tag.
 export function PushNotificationSetup() {
+  const me = trpc.auth.me.useQuery();
+  const editorTag = me.data?.editor?.tag ?? null;
+
   useEffect(() => {
+    if (!editorTag) return;
     if (!('Notification' in window) || !('PushManager' in window)) return;
     if (Notification.permission === 'denied') return;
 
@@ -66,7 +72,7 @@ export function PushNotificationSetup() {
       .catch(() => {
         // Non-fatal — push just won't work on this device.
       });
-  }, []);
+  }, [editorTag]);
 
   return null;
 }

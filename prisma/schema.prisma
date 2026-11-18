@@ -87,6 +87,8 @@ model Player {
   comfortBases      String[]
   cwlSlot           Int?          @unique
   cwlExcluded       Boolean       @default(false)
+  // Signed into the session cookie. Bumping it revokes every existing session for this player.
+  sessionVersion    Int           @default(0)
 
   warnings          Warning[]
   activity          ActivityEntry[]
@@ -119,6 +121,9 @@ model ActivityEntry {
   date      DateTime
   type      ActivityType
   summary   String
+  // Leader-only: who made the change and any leader-entered free text (e.g. a kick reason).
+  editorName String?
+  detail     String?
 
   @@index([playerId])
 }
@@ -129,6 +134,9 @@ model ClanActivity {
   type      String
   player    String?
   summary   String
+  // Leader-only: who made the change and any leader-entered free text (e.g. a kick reason).
+  editorName String?
+  detail     String?
 
   @@index([date])
 }
@@ -177,12 +185,28 @@ model SyncLog {
   message       String?
 }
 
+// Single-row lock that serialises syncs (cron and manual). Claimed by one conditional UPDATE,
+// so it needs no session-level or advisory lock and works through a connection pooler.
+model SyncLock {
+  id            Int       @id @default(1)
+  // Lock is held while this is in the future; it expires on its own if a sync dies.
+  lockedUntil   DateTime?
+  // "<cron|manual>:<uuid>" of the current holder; only the holder can release.
+  startedBy     String?
+  // Start time of the most recent claimed sync; drives the manual cooldown.
+  lastStartedAt DateTime?
+}
+
 model PushSubscription {
   id        String   @id @default(cuid())
   endpoint  String   @unique
   p256dh    String
   auth      String
+  // Player tag of the signed-in leader who registered this device.
+  ownerTag  String
   createdAt DateTime @default(now())
+
+  @@index([ownerTag])
 }
 
 model WarRecord {

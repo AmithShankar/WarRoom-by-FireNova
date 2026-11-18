@@ -1,6 +1,7 @@
 import { format } from 'date-fns';
 import type { Player } from '@/lib/types';
 import { COLUMNS } from './columns';
+import { neutralizeCell } from './formula';
 
 // ARGB hex colours (ExcelJS format: AARRGGBB)
 const H_BG   = 'FF1E293B'; // header background - dark slate
@@ -41,7 +42,7 @@ export async function buildExcelBuffer(players: Player[]): Promise<ArrayBuffer> 
   ws.autoFilter = { from: { row: 1, column: 1 }, to: { row: 1, column: COLUMNS.length } };
 
   players.forEach((p, idx) => {
-    const row = ws.addRow(COLUMNS.map(col => col.getValue(p)));
+    const row = ws.addRow(COLUMNS.map(col => neutralizeCell(col.getValue(p))));
     row.height = 18;
 
     row.eachCell((cell, colNum) => {

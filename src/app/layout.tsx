@@ -61,10 +61,10 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           >
             <DashboardShell>{children}</DashboardShell>
           </ThemeProvider>
+          <PushNotificationSetup />
         </TrpcProvider>
         <Toaster richColors position="bottom-right" />
         <ServiceWorkerRegister />
-        <PushNotificationSetup />
       </body>
     </html>
   );

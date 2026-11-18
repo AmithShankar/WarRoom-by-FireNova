@@ -1,5 +1,6 @@
 import { z } from 'zod';
-import { router, publicProcedure, leaderProcedure } from '../trpc';
+import { router, publicProcedure, leaderProcedure, viewerProcedure } from '../trpc';
+import { stripLeaderOnlyFields } from '../leader-only';
 import {
   aggregatePerformance,
   onlyCurrentMembers,
@@ -54,15 +55,15 @@ export const performanceRouter = router({
       };
     }),
 
-  playerWars: publicProcedure
-    .input(z.object({ playerTag: z.string() }))
+  playerWars: viewerProcedure
+    .input(z.object({ playerTag: z.string().max(20) }))
     .query(async ({ ctx, input }) => {
       const parts = await ctx.prisma.warParticipation.findMany({
         where: { playerTag: input.playerTag },
         include: { warRecord: true },
         orderBy: { warRecord: { endTime: 'desc' } },
       });
-      return parts.map(p => ({
+      const rows = parts.map(p => ({
         participationId: p.id,
         warKey: p.warRecord.warKey,
         isCwl: p.warRecord.isCwl,
@@ -77,13 +78,14 @@ export const performanceRouter = router({
         excused: p.excused,
         excuseReason: p.excuseReason,
       }));
+      return stripLeaderOnlyFields(rows, ctx.isLeader);
     }),
 
   setExcused: leaderProcedure
     .input(z.object({
       participationId: z.string(),
       excused: z.boolean(),
-      reason: z.string().optional(),
+      reason: z.string().max(500).optional(),
     }))
     .mutation(async ({ ctx, input }) => {
       await ctx.prisma.warParticipation.update({

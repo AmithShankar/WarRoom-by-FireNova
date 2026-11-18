@@ -5,6 +5,8 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { Flame, LogIn, LogOut, ShieldCheck } from "lucide-react";
 import { toast } from "sonner";
+import { useQueryClient } from "@tanstack/react-query";
+import { clearLeaderData } from "@/lib/query-persist";
 import { Button } from "@/components/ui/button";
 import { trpc } from "@/lib/trpc";
 import { ThemeToggle } from "./ThemeToggle";
@@ -15,16 +17,46 @@ import { NotificationsButton } from './NotificationsButton';
 import { SIDEBAR_NAV } from "./Sidebar";
 import { SignInSheet } from "./SignInSheet";
 
+async function unregisterPushOnServer(): Promise<void> {
+  try {
+    if (!("serviceWorker" in navigator)) return;
+    const reg = await navigator.serviceWorker.getRegistration();
+    const sub = await reg?.pushManager.getSubscription();
+    if (!sub) return;
+    await fetch("/api/push/unsubscribe", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ endpoint: sub.endpoint }),
+    });
+  } catch {
+    // Non-fatal: the row is dropped later when the push service reports it gone.
+  }
+}
+
 function AccessControls() {
-  const utils = trpc.useUtils();
+  const queryClient = useQueryClient();
   const me = trpc.auth.me.useQuery();
   const [signInOpen, setSignInOpen] = useState(false);
   const signOut = trpc.auth.signOut.useMutation({
-    onSettled: () => {
-      utils.auth.me.invalidate();
+    onSettled: async () => {
+      // Drop leader-only data (notes, reasons, attribution) from memory and localStorage.
+      let storage: Storage | null = null;
+      try {
+        storage = window.localStorage;
+      } catch {
+        storage = null;
+      }
+      await clearLeaderData(queryClient, storage);
       toast.info('Signed out. You are now in view-only mode.');
     },
   });
+
+  const handleSignOut = async () => {
+    // Stop expiry alerts reaching this device for the leader who is signing out.
+    // Best effort, while the session is still valid.
+    await unregisterPushOnServer();
+    signOut.mutate();
+  };
 
   if (me.data?.editor) {
     return (
@@ -40,7 +72,7 @@ function AccessControls() {
         <Button
           variant="ghost"
           size="sm"
-          onClick={() => signOut.mutate()}
+          onClick={handleSignOut}
           disabled={signOut.isPending}
           title="Sign out"
           aria-label="Sign out"
@@ -71,6 +103,18 @@ function AccessControls() {
       </Button>
       <SignInSheet open={signInOpen} onOpenChange={setSignInOpen} />
     </div>
+  );
+}
+
+// Push alerts and manual sync are leader tools (the server enforces this too).
+function LeaderOnlyControls() {
+  const me = trpc.auth.me.useQuery();
+  if (!me.data?.canEdit) return null;
+  return (
+    <>
+      {me.data.editor && <NotificationsButton />}
+      <SyncButton />
+    </>
   );
 }
 
@@ -106,8 +150,7 @@ export function TopBar() {
       <div className="flex items-center gap-2">
         <WarStatusChip />
         <InstallAppButton />
-        <NotificationsButton />
-        <SyncButton />
+        <LeaderOnlyControls />
         <ThemeToggle />
         <AccessControls />
       </div>

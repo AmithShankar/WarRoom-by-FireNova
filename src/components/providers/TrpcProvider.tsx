@@ -9,7 +9,8 @@ import { httpBatchLink } from '@trpc/client';
 import superjson from 'superjson';
 import { toast } from 'sonner';
 import { trpc } from '@/lib/trpc';
-import { CACHE_BUSTER, deserializeCache, serializeCache } from '@/lib/query-persist';
+import { CACHE_BUSTER, CACHE_KEY, deserializeCache, serializeCache } from '@/lib/query-persist';
+import { MAX_BATCH_SIZE } from '@/lib/trpc-limits';
 
 const CACHE_MAX_AGE = 24 * 60 * 60_000;
 
@@ -48,7 +49,7 @@ export function TrpcProvider({ children }: { children: React.ReactNode }) {
       // Accessing localStorage throws when site data is blocked.
       return createSyncStoragePersister({
         storage: window.localStorage,
-        key: 'warroom-cache',
+        key: CACHE_KEY,
         serialize: serializeCache,
         deserialize: (raw) => deserializeCache(raw) as PersistedClient,
       });
@@ -58,7 +59,7 @@ export function TrpcProvider({ children }: { children: React.ReactNode }) {
   });
   const [trpcClient] = useState(() =>
     trpc.createClient({
-      links: [httpBatchLink({ url: '/api/trpc', transformer: superjson })],
+      links: [httpBatchLink({ url: '/api/trpc', transformer: superjson, maxItems: MAX_BATCH_SIZE })],
     }),
   );
   return (

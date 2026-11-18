@@ -1,8 +1,8 @@
 import { z } from 'zod';
-import { router, publicProcedure, type Editor } from '../trpc';
+import { router, publicProcedure, loadSessionEditor } from '../trpc';
 import { getSessionSecret } from '../context';
 import { cocPost } from '../coc/client';
-import { isLockOn, canEdit } from '@/lib/access';
+import { isLockOn } from '@/lib/access';
 import { signSession, SESSION_COOKIE, SESSION_MAX_AGE_S } from '@/lib/session';
 import { signInDecision, normaliseTag } from '@/lib/sign-in';
 import { signInRateLimiter } from '@/lib/rate-limit';
@@ -21,14 +21,7 @@ async function verifyToken(tag: string, token: string): Promise<'ok' | 'invalid'
 export const authRouter = router({
   me: publicProcedure.query(async ({ ctx }) => {
     const lockOn = isLockOn();
-    let editor: Editor | null = null;
-    if (ctx.sessionTag) {
-      const player = await ctx.prisma.player.findUnique({
-        where: { playerTag: ctx.sessionTag },
-        select: { playerTag: true, name: true, role: true, status: true },
-      });
-      if (player && canEdit(player)) editor = { tag: player.playerTag, name: player.name };
-    }
+    const editor = await loadSessionEditor(ctx);
     return { lockOn, editor, canEdit: !lockOn || editor !== null };
   }),
 
@@ -58,18 +51,29 @@ export const authRouter = router({
       });
       if (result !== 'ok') return { result };
       const normTag = normaliseTag(input.tag);
-      if (secret) {
-        const value = signSession(normTag, secret, new Date());
-        ctx.resHeaders.append('Set-Cookie', cookie(value, SESSION_MAX_AGE_S));
-      }
       const player = await ctx.prisma.player.findUnique({
         where: { playerTag: normTag },
-        select: { name: true },
+        select: { name: true, sessionVersion: true },
       });
+      if (secret) {
+        // The cookie carries the player's current session version; sign-out bumps it.
+        const value = signSession(normTag, secret, new Date(), player?.sessionVersion ?? 0);
+        ctx.resHeaders.append('Set-Cookie', cookie(value, SESSION_MAX_AGE_S));
+      }
       return { result: 'ok' as const, name: player?.name ?? normTag };
     }),
 
-  signOut: publicProcedure.mutation(({ ctx }) => {
+  // Revokes every session of the signed-in leader (all devices and any copied cookie) by bumping
+  // Player.sessionVersion. Only a currently valid session can do this, so an old or stolen-and-
+  // already-revoked cookie cannot keep signing the real leader out.
+  signOut: publicProcedure.mutation(async ({ ctx }) => {
+    const editor = await loadSessionEditor(ctx);
+    if (editor) {
+      await ctx.prisma.player.updateMany({
+        where: { playerTag: editor.tag, sessionVersion: ctx.sessionVersion },
+        data: { sessionVersion: { increment: 1 } },
+      });
+    }
     ctx.resHeaders.append('Set-Cookie', cookie('', 0));
     return { result: 'ok' as const };
   }),

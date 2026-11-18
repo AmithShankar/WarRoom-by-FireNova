@@ -1,4 +1,5 @@
 import type { NextConfig } from 'next';
+import { buildSecurityHeaders } from './src/lib/security-headers';
 
 const nextConfig: NextConfig = {
   turbopack: {
@@ -13,6 +14,14 @@ const nextConfig: NextConfig = {
       // DismissableLayer has the same React 19 useState-ref loop
       '@radix-ui/react-dismissable-layer': './src/lib/react-dismissable-layer.tsx',
     },
+  },
+  async headers() {
+    return [
+      {
+        source: '/:path*',
+        headers: buildSecurityHeaders(process.env.NODE_ENV === 'development'),
+      },
+    ];
   },
   env: {
     // Unique per build, inlined into the client bundle. Used to bust the

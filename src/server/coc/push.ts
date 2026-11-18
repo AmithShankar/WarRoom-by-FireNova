@@ -57,6 +57,8 @@ export async function sendExpiryNotification(
         await webpush.sendNotification(
           { endpoint: sub.endpoint, keys: { p256dh: sub.p256dh, auth: sub.auth } },
           payload,
+          // A slow or hanging push service must not stall the sync.
+          { timeout: 5000 },
         );
       } catch (err: unknown) {
         if (err instanceof WebPushError && (err.statusCode === 404 || err.statusCode === 410)) {
@@ -64,7 +66,7 @@ export async function sendExpiryNotification(
         } else {
           console.warn(
             'Push delivery failed:',
-            sub.endpoint,
+            new URL(sub.endpoint).host,
             err instanceof Error ? err.message : err,
           );
         }

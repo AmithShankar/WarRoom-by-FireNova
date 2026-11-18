@@ -1,21 +1,7 @@
 import { z } from 'zod';
-import { router, publicProcedure } from '../trpc';
+import { router, publicProcedure, viewerProcedure } from '../trpc';
 import type { PlayerStatus } from '@/lib/prisma';
-import { canEdit } from '@/lib/access';
-import type { Context } from '../context';
-
-export function stripEditorAttribution(summary: string): string {
-  return summary.replace(/\s+(?:by|\(reclassified by|\(by)\s+[^)]+\)?$/, '');
-}
-
-async function isAuthorizedLeader(ctx: Context): Promise<boolean> {
-  if (!ctx.sessionTag) return false;
-  const player = await ctx.prisma.player.findUnique({
-    where: { playerTag: ctx.sessionTag },
-    select: { role: true, status: true },
-  });
-  return canEdit(player);
-}
+import { stripLeaderOnlyFields } from '../leader-only';
 
 export const dashboardRouter = router({
   overview: publicProcedure.query(async ({ ctx }) => {
@@ -48,37 +34,35 @@ export const dashboardRouter = router({
     }),
   ),
 
-  lastWar: publicProcedure.query(({ ctx }) =>
-    ctx.prisma.warRecord.findFirst({
-      orderBy: { endTime: 'desc' },
-      include: { participations: { orderBy: { mapPosition: 'asc' } } },
-    }),
+  // Participations carry WarParticipation.excuseReason (leader-entered), so this is viewer-aware.
+  lastWar: viewerProcedure.query(async ({ ctx }) =>
+    stripLeaderOnlyFields(
+      await ctx.prisma.warRecord.findFirst({
+        orderBy: { endTime: 'desc' },
+        include: { participations: { orderBy: { mapPosition: 'asc' } } },
+      }),
+      ctx.isLeader,
+    ),
   ),
 
-  activity: publicProcedure.query(async ({ ctx }) => {
-    const isLeader = await isAuthorizedLeader(ctx);
+  activity: viewerProcedure.query(async ({ ctx }) => {
     const rows = await ctx.prisma.clanActivity.findMany({ orderBy: { date: 'desc' }, take: 10 });
-    if (isLeader) return rows;
-    return rows.map(r => ({ ...r, summary: stripEditorAttribution(r.summary) }));
+    return stripLeaderOnlyFields(rows, ctx.isLeader);
   }),
 
-  allActivity: publicProcedure.query(async ({ ctx }) => {
-    const isLeader = await isAuthorizedLeader(ctx);
+  allActivity: viewerProcedure.query(async ({ ctx }) => {
     const rows = await ctx.prisma.clanActivity.findMany({ orderBy: { date: 'desc' }, take: 500 });
-    if (isLeader) return rows;
-    return rows.map(r => ({ ...r, summary: stripEditorAttribution(r.summary) }));
+    return stripLeaderOnlyFields(rows, ctx.isLeader);
   }),
 
-  playerActivity: publicProcedure
-    .input(z.object({ player: z.string() }))
+  playerActivity: viewerProcedure
+    .input(z.object({ player: z.string().max(100) }))
     .query(async ({ ctx, input }) => {
-      const isLeader = await isAuthorizedLeader(ctx);
       const rows = await ctx.prisma.clanActivity.findMany({
         where: { player: input.player },
         orderBy: { date: 'desc' },
         take: 15,
       });
-      if (isLeader) return rows;
-      return rows.map(r => ({ ...r, summary: stripEditorAttribution(r.summary) }));
+      return stripLeaderOnlyFields(rows, ctx.isLeader);
     }),
 });

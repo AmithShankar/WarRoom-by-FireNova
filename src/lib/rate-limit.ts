@@ -1,6 +1,11 @@
 /**
  * In-memory sliding window rate limiter.
  * Tracks timestamps of recent attempts per key and blocks when limit is exceeded.
+ *
+ * Limitation (L3): state lives in process memory, so on Vercel each serverless instance has its
+ * own counters and a cold start resets them. It slows automated guessing but is not a hard,
+ * global limit; that would need a shared store (a database table or a KV service). The IP key
+ * comes from readClientIp in src/server/context.ts, which relies on headers Vercel sets itself.
  */
 export class MemoryRateLimiter {
   private attempts = new Map<string, number[]>();

@@ -1,17 +1,30 @@
 import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
 import { addHours } from 'date-fns';
-import { router, publicProcedure, leaderProcedure } from '../trpc';
+import { router, viewerProcedure, leaderProcedure } from '../trpc';
+import { stripLeaderOnlyFields } from '../leader-only';
 import type { PlayerStatus } from '@/lib/prisma';
 
+// Length limits on leader-entered input (L5).
+const TAG = z.string().max(20);
+const FREE_TEXT_MAX = 500;
+// Player tags as typed or imported: '#' then 3-12 letters/digits (normalised to upper case client side).
+const IMPORT_TAG = z.string().regex(/^#[A-Z0-9]{3,12}$/);
+const IMPORT_MAX_PLAYERS = 200;
+
+/** Imports never grant edit rights: elevated roles become Member. Sync owns real roles. */
+export function importedRole(role: 'Leader' | 'CoLeader' | 'Elder' | 'Member'): 'Elder' | 'Member' {
+  return role === 'Elder' ? 'Elder' : 'Member';
+}
+
 const warningInput = z.object({
-  playerTag: z.string(),
+  playerTag: TAG,
   date: z.date(),
   durationHours: z.number().int().positive().nullable(),
   reason: z.enum([
     'FailedInitialChallenge', 'MissedWarAttack', 'LowDonations', 'Behavior', 'Other',
   ]),
-  notes: z.string(),
+  notes: z.string().max(FREE_TEXT_MAX),
   context: z.object({
     warPerfected: z.boolean(),
     mirrorCleared: z.boolean(),
@@ -56,12 +69,14 @@ export function statusAfterWarningRemoved(
 }
 
 export const rosterRouter = router({
-  list: publicProcedure.query(({ ctx }) =>
-    ctx.prisma.player.findMany({
+  list: viewerProcedure.query(async ({ ctx }) => {
+    const players = await ctx.prisma.player.findMany({
       include: { warnings: { orderBy: { date: 'desc' } }, activity: { orderBy: { date: 'desc' } } },
       orderBy: { name: 'asc' },
-    }),
-  ),
+    });
+    // Visitors get no leader attribution (M3) and no leader-entered notes or reasons (M4).
+    return stripLeaderOnlyFields(players, ctx.isLeader);
+  }),
 
   issueWarning: leaderProcedure.input(warningInput).mutation(async ({ ctx, input }) => {
     const player = await ctx.prisma.player.findUniqueOrThrow({ where: { playerTag: input.playerTag } });
@@ -80,13 +95,14 @@ export const rosterRouter = router({
         thLevelCleared: input.context?.thLevelCleared ?? null,
       },
     });
-    const by = ctx.editor ? ` by ${ctx.editor.name}` : '';
+    const editorName = ctx.editor?.name ?? null;
     await ctx.prisma.clanActivity.create({
       data: {
         date: new Date(),
         type: 'warning',
         player: player.name,
-        summary: `${player.name} warned for ${REASON_DISPLAY[input.reason]}${by}`,
+        summary: `${player.name} warned for ${REASON_DISPLAY[input.reason]}`,
+        editorName,
       },
     });
     if (player.status === 'Staying' || player.status === 'New') {
@@ -96,7 +112,7 @@ export const rosterRouter = router({
   }),
 
   removeWarning: leaderProcedure
-    .input(z.object({ warningId: z.string() }))
+    .input(z.object({ warningId: z.string().max(40) }))
     .mutation(async ({ ctx, input }) => {
       const warning = await ctx.prisma.warning.findUniqueOrThrow({
         where: { id: input.warningId },
@@ -104,13 +120,14 @@ export const rosterRouter = router({
       });
       const { player } = warning;
       await ctx.prisma.warning.delete({ where: { id: warning.id } });
-      const by = ctx.editor ? ` by ${ctx.editor.name}` : '';
+      const editorName = ctx.editor?.name ?? null;
       await ctx.prisma.clanActivity.create({
         data: {
           date: new Date(),
           type: 'warning',
           player: player.name,
-          summary: `${player.name} warning for ${REASON_DISPLAY[warning.reason]} removed${by}`,
+          summary: `${player.name} warning for ${REASON_DISPLAY[warning.reason]} removed`,
+          editorName,
         },
       });
       const remaining = await ctx.prisma.warning.count({ where: { playerId: player.id } });
@@ -122,25 +139,29 @@ export const rosterRouter = router({
     }),
 
   kickPlayer: leaderProcedure
-    .input(z.object({ playerTag: z.string(), reason: z.string().min(1) }))
+    .input(z.object({ playerTag: TAG, reason: z.string().min(1).max(FREE_TEXT_MAX) }))
     .mutation(async ({ ctx, input }) => {
       const player = await ctx.prisma.player.findUniqueOrThrow({ where: { playerTag: input.playerTag } });
+      const editorName = ctx.editor?.name ?? null;
       await ctx.prisma.player.update({
         where: { id: player.id },
         data: {
           status: 'Kicked',
           kickReason: input.reason,
           removedAt: new Date(),
-          activity: { create: { date: new Date(), type: 'kick', summary: `Removed from clan: ${input.reason}` } },
+          activity: {
+            create: { date: new Date(), type: 'kick', summary: 'Removed from clan', detail: input.reason, editorName },
+          },
         },
       });
-      const by = ctx.editor ? ` by ${ctx.editor.name}` : '';
       await ctx.prisma.clanActivity.create({
         data: {
           date: new Date(),
           type: 'kick',
           player: player.name,
-          summary: `${player.name} removed from clan: ${input.reason}${by}`,
+          summary: `${player.name} removed from clan`,
+          detail: input.reason,
+          editorName,
         },
       });
       return { ok: true };
@@ -148,9 +169,9 @@ export const rosterRouter = router({
 
   reclassifyDeparture: leaderProcedure
     .input(z.object({
-      playerTag: z.string(),
+      playerTag: TAG,
       status: z.enum(['Kicked', 'Left']),
-      reason: z.string().optional(),
+      reason: z.string().max(FREE_TEXT_MAX).optional(),
     }))
     .mutation(async ({ ctx, input }) => {
       const player = await ctx.prisma.player.findUniqueOrThrow({
@@ -167,11 +188,9 @@ export const rosterRouter = router({
       // Update the existing departure activity in place rather than adding a
       // duplicate row. Sync writes "<name> left the clan"; a prior reclassify
       // may have left "<name> was kicked".
-      const by = ctx.editor ? ` by ${ctx.editor.name}` : '';
-      const newSummary =
-        input.status === 'Kicked'
-          ? `${player.name} was kicked${input.reason ? `: ${input.reason}` : ''}${by}`
-          : `${player.name} left the clan${by}`;
+      const editorName = ctx.editor?.name ?? null;
+      const newSummary = input.status === 'Kicked' ? `${player.name} was kicked` : `${player.name} left the clan`;
+      const detail = input.status === 'Kicked' ? (input.reason || null) : null;
       const departure = await ctx.prisma.clanActivity.findFirst({
         where: {
           player: player.name,
@@ -183,18 +202,18 @@ export const rosterRouter = router({
       if (departure) {
         await ctx.prisma.clanActivity.update({
           where: { id: departure.id },
-          data: { summary: newSummary },
+          data: { summary: newSummary, detail, editorName },
         });
       } else if (input.status === 'Kicked') {
         await ctx.prisma.clanActivity.create({
-          data: { date: new Date(), type: 'kick', player: player.name, summary: newSummary },
+          data: { date: new Date(), type: 'kick', player: player.name, summary: newSummary, detail, editorName },
         });
       }
       return { ok: true };
     }),
 
   setChallenge: leaderProcedure
-    .input(z.object({ playerTag: z.string(), posted: z.boolean() }))
+    .input(z.object({ playerTag: TAG, posted: z.boolean() }))
     .mutation(async ({ ctx, input }) => {
       const player = await ctx.prisma.player.findUniqueOrThrow({
         where: { playerTag: input.playerTag },
@@ -207,13 +226,14 @@ export const rosterRouter = router({
           ...(input.posted && player.status === 'New' ? { status: 'Staying' as const } : {}),
         },
       });
-      const by = ctx.editor ? ` by ${ctx.editor.name}` : '';
+      const editorName = ctx.editor?.name ?? null;
       await ctx.prisma.clanActivity.create({
         data: {
           date: new Date(),
           type: 'promotion',
           player: player.name,
-          summary: `${player.name} challenge ${input.posted ? 'marked posted' : 'unmarked'}${by}`,
+          summary: `${player.name} challenge ${input.posted ? 'marked posted' : 'unmarked'}`,
+          editorName,
         },
       });
       return { ok: true };
@@ -221,7 +241,7 @@ export const rosterRouter = router({
 
   markStayingByActivity: leaderProcedure
     .input(z.object({
-      playerTag: z.string(),
+      playerTag: TAG,
       activity: z.enum(['ClanGames', 'CWL', 'RaidWeekend', 'Other']),
     }))
     .mutation(async ({ ctx, input }) => {
@@ -236,7 +256,7 @@ export const rosterRouter = router({
         });
       }
       const label = ACTIVITY_LABELS[input.activity];
-      const by = ctx.editor ? ` by ${ctx.editor.name}` : '';
+      const editorName = ctx.editor?.name ?? null;
       await ctx.prisma.player.update({
         where: { id: player.id },
         data: {
@@ -245,7 +265,8 @@ export const rosterRouter = router({
             create: {
               date: new Date(),
               type: 'promotion',
-              summary: `Marked staying — ${label}${by}`,
+              summary: `Marked staying — ${label}`,
+              editorName,
             },
           },
         },
@@ -255,7 +276,8 @@ export const rosterRouter = router({
           date: new Date(),
           type: 'promotion',
           player: player.name,
-          summary: `${player.name} marked staying (${label})${by}`,
+          summary: `${player.name} marked staying (${label})`,
+          editorName,
         },
       });
       return { ok: true };
@@ -264,21 +286,23 @@ export const rosterRouter = router({
   importPlayers: leaderProcedure
     .input(z.object({
       players: z.array(z.object({
-        playerTag: z.string(),
-        name: z.string(),
-        townHallLevel: z.number().int(),
+        playerTag: IMPORT_TAG,
+        name: z.string().min(1).max(50),
+        townHallLevel: z.number().int().min(1).max(30),
         role: z.enum(['Leader', 'CoLeader', 'Elder', 'Member']),
-      })),
+      })).max(IMPORT_MAX_PLAYERS),
     }))
     .mutation(async ({ ctx, input }) => {
       let imported = 0;
       for (const p of input.players) {
         await ctx.prisma.player.upsert({
           where: { playerTag: p.playerTag },
-          update: { name: p.name, townHallLevel: p.townHallLevel, role: p.role },
+          // Never touch an existing player's role, and never create a Leader or Co-Leader:
+          // edit rights come only from roles synced from Clash of Clans (L5).
+          update: { name: p.name, townHallLevel: p.townHallLevel },
           create: {
             playerTag: p.playerTag, name: p.name, townHallLevel: p.townHallLevel,
-            role: p.role, joinedAt: new Date(),
+            role: importedRole(p.role), joinedAt: new Date(),
           },
         });
         imported++;

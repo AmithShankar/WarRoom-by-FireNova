@@ -2,7 +2,8 @@ import { prisma, type PrismaClient } from '@/lib/prisma';
 import { mapWithLimit } from '@/lib/concurrency';
 import { shouldSnapshot } from '@/lib/clan-games';
 import { raidRowsToWrite } from '@/lib/events';
-import { isSyncInProgress } from '@/lib/sync-timing';
+import { claimSync, releaseSync } from './sync-claim';
+import { syncErrorCode } from './sync-errors';
 import { cocGet, CocApiError } from './client';
 import { sendExpiryNotification, toReadableReason } from './push';
 import {
@@ -95,14 +96,38 @@ async function archiveWar(db: PrismaClient, archive: WarArchive): Promise<void> 
   }
 }
 
-export async function runSync(): Promise<{ membersSynced: number; skipped?: true }> {
-  const latest = await prisma.syncLog.findFirst({
-    orderBy: { startedAt: 'desc' },
-    select: { startedAt: true, finishedAt: true },
-  });
-  if (isSyncInProgress(latest, new Date())) return { membersSynced: 0, skipped: true };
+// Push sends per sync are capped so a large subscription table cannot eat the function timeout.
+const MAX_PUSH_SENDS_PER_SYNC = 50;
 
-  const log = await prisma.syncLog.create({ data: { status: 'success' } });
+export type RunSyncOptions = {
+  /** Refuse to start if the last sync started less than this long ago. 0 (cron) = no cooldown. */
+  minIntervalMs?: number;
+};
+
+export async function runSync(
+  opts: RunSyncOptions = {},
+): Promise<{ membersSynced: number; skipped?: true; reason?: 'in_progress' | 'cooldown' }> {
+  const minIntervalMs = opts.minIntervalMs ?? 0;
+  let claim;
+  try {
+    claim = await claimSync(prisma, new Date(), minIntervalMs, minIntervalMs > 0 ? 'manual' : 'cron');
+  } catch (err) {
+    // Named separately so a claim failure is easy to tell apart from a CoC API error in the logs.
+    console.error('Sync claim (claimSync) failed:', err);
+    throw err;
+  }
+  if (!claim.ok) return { membersSynced: 0, skipped: true, reason: claim.reason };
+
+  const log = { id: claim.logId };
+  try {
+    return await runClaimedSync(log);
+  } finally {
+    // Free the lock for the next sync. If this fails, the lock still expires after SYNC_LOCK_TTL_MS.
+    await releaseSync(prisma, claim.token).catch(err => console.error('Sync lock release failed:', err));
+  }
+}
+
+async function runClaimedSync(log: { id: string }): Promise<{ membersSynced: number }> {
   try {
     if (!CLAN_TAG) throw new Error('COC_CLAN_TAG is not set');
 
@@ -344,7 +369,22 @@ export async function runSync(): Promise<{ membersSynced: number; skipped?: true
       });
 
       if (expiredWarnings.length > 0) {
-        const subs = await prisma.pushSubscription.findMany();
+        // Only devices registered by a current Leader or Co-Leader receive expiry alerts.
+        const subs = await prisma.pushSubscription.findMany({
+          where: {
+            ownerTag: {
+              in: (
+                await prisma.player.findMany({
+                  where: { role: { in: ['Leader', 'CoLeader'] }, status: { notIn: ['Left', 'Kicked'] } },
+                  select: { playerTag: true },
+                })
+              ).map(p => p.playerTag),
+            },
+          },
+          orderBy: { createdAt: 'desc' },
+          take: MAX_PUSH_SENDS_PER_SYNC,
+          select: { id: true, endpoint: true, p256dh: true, auth: true },
+        });
         const warnings = expiredWarnings.map(w => ({
           name: w.player.name,
           reason: toReadableReason(w.reason),
@@ -366,12 +406,14 @@ export async function runSync(): Promise<{ membersSynced: number; skipped?: true
 
     return { membersSynced: items.length };
   } catch (err) {
+    // Full details stay in the server log; the public SyncLog row gets a short code only.
+    console.error('Sync failed:', err);
     await prisma.syncLog.update({
       where: { id: log.id },
       data: {
         status: 'failed',
         finishedAt: new Date(),
-        message: err instanceof Error ? err.message : 'Unknown error',
+        message: syncErrorCode(err),
       },
     });
     throw err;

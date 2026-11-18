@@ -1,16 +1,20 @@
 import { z } from 'zod';
 import { TRPCError } from '@trpc/server';
-import { router, publicProcedure, leaderProcedure } from '../trpc';
+import { router, viewerProcedure, leaderProcedure } from '../trpc';
+import { stripLeaderOnlyFields } from '../leader-only';
 import { sortLineupByTownHall } from '@/lib/cwl-order';
 
 const CWL_WAR_SIZE = 15;
 
 export const cwlRouter = router({
-  board: publicProcedure.query(async ({ ctx }) => {
-    const players = await ctx.prisma.player.findMany({
-      where: { status: { notIn: ['Kicked', 'Left'] } },
-      orderBy: { townHallLevel: 'desc' },
-    });
+  board: viewerProcedure.query(async ({ ctx }) => {
+    const players = stripLeaderOnlyFields(
+      await ctx.prisma.player.findMany({
+        where: { status: { notIn: ['Kicked', 'Left'] } },
+        orderBy: { townHallLevel: 'desc' },
+      }),
+      ctx.isLeader,
+    );
     return {
       lineup: players.filter(p => p.cwlSlot !== null),
       available: players.filter(p => p.cwlSlot === null && !p.cwlExcluded),
@@ -21,7 +25,7 @@ export const cwlRouter = router({
   // Bulk move selected players to a bucket.
   bulkMove: leaderProcedure
     .input(z.object({
-      playerTags: z.array(z.string()),
+      playerTags: z.array(z.string().max(20)).max(60),
       target: z.enum(['lineup', 'available', 'excluded']),
     }))
     .mutation(async ({ ctx, input }) => {
@@ -53,12 +57,13 @@ export const cwlRouter = router({
           i++;
         }
       }
-      const by = ctx.editor ? ` by ${ctx.editor.name}` : '';
+      const editorName = ctx.editor?.name ?? null;
       await ctx.prisma.clanActivity.create({
         data: {
           date: new Date(),
           type: 'cwl',
-          summary: `CWL: ${input.playerTags.length} player(s) moved to ${input.target}${by}`,
+          summary: `CWL: ${input.playerTags.length} player(s) moved to ${input.target}`,
+          editorName,
         },
       });
       return { ok: true };
@@ -66,7 +71,7 @@ export const cwlRouter = router({
 
   // Add one player to the lineup, then re-number every slot by Town Hall desc.
   addToLineup: leaderProcedure
-    .input(z.object({ playerTag: z.string() }))
+    .input(z.object({ playerTag: z.string().max(20) }))
     .mutation(async ({ ctx, input }) => {
       const current = await ctx.prisma.player.findMany({
         where: { cwlSlot: { not: null } },
@@ -91,13 +96,14 @@ export const cwlRouter = router({
           }),
         ),
       ]);
-      const by = ctx.editor ? ` by ${ctx.editor.name}` : '';
+      const editorName = ctx.editor?.name ?? null;
       await ctx.prisma.clanActivity.create({
         data: {
           date: new Date(),
           type: 'cwl',
           player: added.name,
-          summary: `${added.name} added to CWL lineup${by}`,
+          summary: `${added.name} added to CWL lineup`,
+          editorName,
         },
       });
       return { ok: true };
@@ -105,7 +111,7 @@ export const cwlRouter = router({
 
   // Apply a manual lineup order - orderedTags[i] gets slot i + 1.
   reorderLineup: leaderProcedure
-    .input(z.object({ orderedTags: z.array(z.string()).max(CWL_WAR_SIZE) }))
+    .input(z.object({ orderedTags: z.array(z.string().max(20)).max(CWL_WAR_SIZE) }))
     .mutation(async ({ ctx, input }) => {
       await ctx.prisma.$transaction([
         ctx.prisma.player.updateMany({
@@ -119,12 +125,13 @@ export const cwlRouter = router({
           }),
         ),
       ]);
-      const by = ctx.editor ? ` by ${ctx.editor.name}` : '';
+      const editorName = ctx.editor?.name ?? null;
       await ctx.prisma.clanActivity.create({
         data: {
           date: new Date(),
           type: 'cwl',
-          summary: `CWL lineup reordered${by}`,
+          summary: `CWL lineup reordered`,
+          editorName,
         },
       });
       return { ok: true };
@@ -135,12 +142,13 @@ export const cwlRouter = router({
     await ctx.prisma.player.updateMany({
       data: { cwlSlot: null, cwlExcluded: false },
     });
-    const by = ctx.editor ? ` by ${ctx.editor.name}` : '';
+    const editorName = ctx.editor?.name ?? null;
     await ctx.prisma.clanActivity.create({
       data: {
         date: new Date(),
         type: 'cwl',
-        summary: `CWL lineup cleared${by}`,
+        summary: `CWL lineup cleared`,
+        editorName,
       },
     });
     return { ok: true };

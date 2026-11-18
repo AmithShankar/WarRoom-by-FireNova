@@ -5,13 +5,32 @@ import { router, leaderProcedure } from '@/server/trpc';
 import { createContext } from '@/server/context';
 import { signSession } from '@/lib/session';
 
-describe('isLockOn', () => {
-  it('is true only for exact on', () => {
-    expect(isLockOn({ ACCESS_LOCK: 'on' })).toBe(true);
-    expect(isLockOn({})).toBe(false);
+describe('isLockOn (fails closed)', () => {
+  it('is off only when ACCESS_LOCK is explicitly off', () => {
     expect(isLockOn({ ACCESS_LOCK: 'off' })).toBe(false);
-    expect(isLockOn({ ACCESS_LOCK: 'ON' })).toBe(false);
-    expect(isLockOn({ ACCESS_LOCK: '' })).toBe(false);
+  });
+  it('is on when ACCESS_LOCK is missing or empty', () => {
+    expect(isLockOn({})).toBe(true);
+    expect(isLockOn({ ACCESS_LOCK: '' })).toBe(true);
+    expect(isLockOn({ NODE_ENV: 'production' })).toBe(true);
+  });
+  it('is on for any other value, including typos of off', () => {
+    expect(isLockOn({ ACCESS_LOCK: 'on' })).toBe(true);
+    expect(isLockOn({ ACCESS_LOCK: 'ON' })).toBe(true);
+    expect(isLockOn({ ACCESS_LOCK: 'true' })).toBe(true);
+    expect(isLockOn({ ACCESS_LOCK: '0' })).toBe(true);
+    expect(isLockOn({ ACCESS_LOCK: 'Off' })).toBe(true);
+    expect(isLockOn({ ACCESS_LOCK: ' off ' })).toBe(true);
+  });
+});
+
+describe('leaderProcedure with ACCESS_LOCK unset', () => {
+  afterEach(() => vi.unstubAllEnvs());
+  it('rejects a visitor when the variable is missing', async () => {
+    vi.stubEnv('ACCESS_LOCK', '');
+    delete process.env.ACCESS_LOCK;
+    const r = router({ edit: leaderProcedure.mutation(() => 'ok') });
+    await expect(r.createCaller(fakeCtx(null, [])).edit()).rejects.toMatchObject({ code: 'UNAUTHORIZED' });
   });
 });
 

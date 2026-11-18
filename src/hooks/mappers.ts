@@ -29,6 +29,12 @@ import type {
   WarMemberInfo,
 } from '@/lib/types';
 
+// The API never sends the raw editorName / detail columns (see src/server/leader-only.ts).
+type LeaderOnlyColumns = 'editorName' | 'detail';
+type ApiActivityEntry = Omit<PrismaActivityEntry, LeaderOnlyColumns>;
+type ApiClanActivity = Omit<PrismaClanActivity, LeaderOnlyColumns>;
+type ApiPlayer = Omit<PrismaPlayer, 'sessionVersion'>;
+
 const ROLE: Record<PrismaRole, Role> = {
   Leader: 'Leader',
   CoLeader: 'Co-Leader',
@@ -87,7 +93,7 @@ function mapWarning(w: PrismaWarning): Warning {
   };
 }
 
-function mapActivity(a: PrismaActivityEntry): ActivityEntry {
+function mapActivity(a: ApiActivityEntry): ActivityEntry {
   return {
     id: a.id,
     date: iso(a.date),
@@ -96,9 +102,9 @@ function mapActivity(a: PrismaActivityEntry): ActivityEntry {
   };
 }
 
-type PrismaPlayerWithRelations = PrismaPlayer & {
+type PrismaPlayerWithRelations = ApiPlayer & {
   warnings: PrismaWarning[];
-  activity: PrismaActivityEntry[];
+  activity: ApiActivityEntry[];
 };
 
 export function mapPlayer(p: PrismaPlayerWithRelations): Player {
@@ -138,11 +144,11 @@ export function mapPlayer(p: PrismaPlayerWithRelations): Player {
   };
 }
 
-export function mapBoardPlayer(p: PrismaPlayer): Player {
+export function mapBoardPlayer(p: ApiPlayer): Player {
   return mapPlayer({ ...p, warnings: [], activity: [] });
 }
 
-export function mapClanActivity(a: PrismaClanActivity): ClanActivity {
+export function mapClanActivity(a: ApiClanActivity): ClanActivity {
   return {
     id: a.id,
     date: iso(a.date),

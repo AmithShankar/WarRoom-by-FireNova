@@ -9,7 +9,7 @@ describe('session cookie', () => {
     expect(SESSION_COOKIE).toBe('warroom_session');
     expect(SESSION_MAX_AGE_S).toBe(30 * 24 * 60 * 60);
   });
-  it('round trips', () => expect(readSession(signSession('#ABC', secret, now), secret, now)).toEqual({ tag: '#ABC' }));
+  it('round trips', () => expect(readSession(signSession('#ABC', secret, now), secret, now)).toEqual({ tag: '#ABC', version: 0 }));
   it('rejects a tampered payload', () => {
     const [, sig] = signSession('#ABC', secret, now).split('.');
     const forged = Buffer.from(JSON.stringify({ tag: '#EVIL', iat: now.getTime() })).toString('base64url') + '.' + sig;

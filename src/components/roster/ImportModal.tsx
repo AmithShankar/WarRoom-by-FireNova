@@ -11,6 +11,8 @@ import { ImportSummary } from './ImportSummary';
 import type { DuplicateMode, ImportResult, ImportRow } from '@/lib/import-export/types';
 import type { Player } from '@/lib/types';
 
+const MAX_IMPORT_BYTES = 2 * 1024 * 1024;
+
 type Step = 'upload' | 'preview' | 'summary';
 
 interface ImportModalProps {
@@ -40,6 +42,8 @@ export function ImportModal({
     setIsParsing(true);
     setParseError(null);
     try {
+      // A huge file would freeze the tab while parsing; a roster file is a few KB.
+      if (file.size > MAX_IMPORT_BYTES) throw new Error('File is too large. The limit is 2 MB.');
       const existingTags = new Set(existingPlayers.map(p => p.playerTag));
       const ext = file.name.split('.').pop()?.toLowerCase();
       let parsed: ImportRow[];

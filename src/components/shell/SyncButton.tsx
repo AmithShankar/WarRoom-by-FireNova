@@ -3,6 +3,7 @@
 import { useEffect, useRef } from 'react';
 import { useIsRestoring } from '@tanstack/react-query';
 import { RefreshCw } from 'lucide-react';
+import { toast } from 'sonner';
 import { formatDistanceToNowStrict } from 'date-fns';
 import { Button } from '@/components/ui/button';
 import { trpc } from '@/lib/trpc';
@@ -13,6 +14,9 @@ export function SyncButton() {
   const utils = trpc.useUtils();
   const status = trpc.sync.status.useQuery();
   const run = trpc.sync.run.useMutation({
+    onSuccess: (res) => {
+      if (res.skipped && res.reason === 'cooldown') toast.info('Synced recently. Try again in a few minutes.');
+    },
     onMutate: async () => {
       // Cancel any in-flight dashboard queries so they don't race with the sync.
       await Promise.all([

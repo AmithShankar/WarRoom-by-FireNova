@@ -124,27 +124,34 @@ curl -H "Authorization: Bearer <CRON_SECRET>" http://localhost:3000/api/cron/syn
 | `CRON_SECRET` | Must match the `Authorization: Bearer` header sent by the cron service |
 | `NEXT_PUBLIC_VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY` | Web push keys, from `npx web-push generate-vapid-keys` |
 | `VAPID_EMAIL` | Contact for push, for example `mailto:you@example.com` |
-| `ACCESS_LOCK` | Optional. Set to `on` to turn on the access lock. Any other value, or leaving it unset, keeps the app open to everyone |
-| `SESSION_SECRET` | Required when the lock is on. A random string of at least 32 characters used to sign the session cookie |
+| `ACCESS_LOCK` | Optional. The access lock is **on unless this is exactly `off`**: missing, empty or any other value keeps visitors read only. Set `off` only for local development |
+| `SESSION_SECRET` | Required for leaders to sign in. A random string of at least 32 characters used to sign the session cookie. Without it the app is read only for everyone |
 
 ---
 
 ## Access lock
 
-By default anyone with the link can view and edit. With the lock on, viewers still see everything, read only, and only the clan's current Leader and Co-Leaders can make changes.
+The lock is on by default (it fails closed). Visitors can view the roster, wars and performance read only, and only the clan's current Leader and Co-Leaders can make changes, start a manual sync or turn on push alerts. Leader-only details are not sent to visitors: player notes, warning notes, kick and excuse reasons, and who made each change.
 
-**Turning it on**
+**Setting it up**
 
 1. Generate a secret: `openssl rand -hex 32` (or `node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"`).
-2. Set `SESSION_SECRET` to that value and `ACCESS_LOCK=on`, then restart or redeploy.
+2. Set `SESSION_SECRET` to that value, then restart or redeploy. `ACCESS_LOCK` can be left unset (or set to `on`).
+
+To turn the lock off for local development, set `ACCESS_LOCK=off`. Only the exact value `off` opens the app.
 
 **Signing in**
 
-The Leader or a Co-Leader taps Sign in and enters their player tag and their in game API token (in Clash of Clans: Settings, More Settings, API Token). The token is checked once with Supercell through the configured CoC API base URL and is never stored or logged. A signed session cookie then keeps them signed in for 30 days. No Supercell ID, email or password is ever asked for. Sign-in attempts are rate limited (per player tag and IP) to protect the Clash of Clans API quota from automated spam.
+The Leader or a Co-Leader taps Sign in and enters their player tag and their in game API token (in Clash of Clans: Settings, More Settings, API Token). The token is checked once with Supercell through the configured CoC API base URL and is never stored or logged. A signed session cookie then keeps them signed in for 30 days, or until they sign out. No Supercell ID, email or password is ever asked for. Sign-in attempts are rate limited (per player tag and IP) to protect the Clash of Clans API quota from automated spam. The limiter is in memory, so on serverless hosts it is per instance, and the IP comes from headers Vercel sets (`x-real-ip`); on other hosts make sure the proxy overwrites those headers.
+
+**Syncing**
+
+The scheduled cron job (see Deployment) keeps data fresh for everyone. A signed-in leader can also press Refresh, at most once every 5 minutes.
 
 **Losing access**
 
 - Roles are checked against the synced roster on every change, so a member who is demoted in game, leaves or is removed loses edit access after the next sync.
+- Signing out ends that leader's sessions on every device (the session version stored on the player is bumped), and clears the cached data in that browser.
 - To sign everyone out at once, replace `SESSION_SECRET` with a new value and redeploy.
 
 The cookie is marked `Secure` in production, so the site must be served over HTTPS when the lock is on. Otherwise the browser drops the cookie and sign in appears to do nothing.
