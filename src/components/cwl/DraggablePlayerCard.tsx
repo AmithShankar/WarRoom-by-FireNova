@@ -4,6 +4,7 @@ import { memo } from 'react';
 import { useDraggable } from '@dnd-kit/core';
 import { CSS } from '@dnd-kit/utilities';
 import type { Player } from '@/lib/types';
+import { useCanEdit } from '@/hooks/useCanEdit';
 import { PlayerDragCard } from './PlayerDragCard';
 
 export interface DraggablePlayerCardProps {
@@ -11,7 +12,7 @@ export interface DraggablePlayerCardProps {
   data: Record<string, unknown>;
   player: Player;
   selected: boolean;
-  onToggleSelect: (tag: string) => void;
+  onToggleSelect?: (tag: string) => void;
 }
 
 /**
@@ -21,7 +22,8 @@ export interface DraggablePlayerCardProps {
 export const DraggablePlayerCard = memo(function DraggablePlayerCard({
   id, data, player, selected, onToggleSelect,
 }: DraggablePlayerCardProps) {
-  const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({ id, data });
+  const canEdit = useCanEdit();
+  const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({ id, data, disabled: !canEdit });
   const style = {
     transform: CSS.Translate.toString(transform),
     opacity: isDragging ? 0 : 1,

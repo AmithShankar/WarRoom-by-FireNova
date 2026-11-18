@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import { Bell, BellOff } from 'lucide-react';
 
 function urlBase64ToUint8Array(base64String: string): Uint8Array<ArrayBuffer> {
@@ -16,6 +17,7 @@ function urlBase64ToUint8Array(base64String: string): Uint8Array<ArrayBuffer> {
 }
 
 export function NotificationsButton() {
+  const router = useRouter();
   const [supported, setSupported] = useState(false);
   const [iosBlock, setIosBlock] = useState(false);
   const [enabled, setEnabled] = useState(false);
@@ -44,7 +46,10 @@ export function NotificationsButton() {
   if (!supported) return null;
 
   const handleClick = async () => {
-    if (iosBlock) return; // button is disabled, click is a no-op
+    if (iosBlock) {
+      router.push('/install');
+      return;
+    }
 
     const publicKey = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY;
     if (!publicKey) return;
@@ -85,7 +90,7 @@ export function NotificationsButton() {
   };
 
   const label = iosBlock
-    ? 'Install the app first to enable notifications'
+    ? 'Install the app first to enable notifications (click for instructions)'
     : enabled
     ? 'Disable notifications'
     : 'Enable notifications';
@@ -94,12 +99,11 @@ export function NotificationsButton() {
     <button
       type="button"
       onClick={handleClick}
-      disabled={iosBlock}
       title={label}
       aria-label={label}
       className={
         iosBlock
-          ? 'flex h-9 w-9 cursor-not-allowed items-center justify-center rounded-lg text-text-3 opacity-40'
+          ? 'flex h-9 w-9 cursor-pointer items-center justify-center rounded-lg text-amber-500/80 transition-colors hover:bg-surface-2 hover:text-amber-500'
           : enabled
           ? 'flex h-9 w-9 cursor-pointer items-center justify-center rounded-lg text-brand-from transition-colors hover:bg-surface-2'
           : 'flex h-9 w-9 cursor-pointer items-center justify-center rounded-lg text-text-3 transition-colors hover:bg-surface-2 hover:text-text-1'

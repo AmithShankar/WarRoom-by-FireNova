@@ -1,8 +1,9 @@
 'use client';
 
 import { useMemo } from 'react';
+import Link from 'next/link';
 import { format, formatDistanceToNowStrict } from 'date-fns';
-import { AlertTriangle, Clock } from 'lucide-react';
+import { AlertTriangle, Clock, History } from 'lucide-react';
 import { Card, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
@@ -34,9 +35,18 @@ export default function WarningsPage() {
 
   return (
     <div className="space-y-5">
-      <header>
-        <h2 className="text-xl font-semibold tracking-tight text-text-1 md:text-2xl">All Warnings</h2>
-        <p className="text-sm text-text-2">Chronological audit log of every active and historical warning.</p>
+      <header className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <h2 className="text-xl font-semibold tracking-tight text-text-1 md:text-2xl">All Warnings</h2>
+          <p className="text-sm text-text-2">Chronological audit log of every active and historical warning.</p>
+        </div>
+        <Link
+          href="/activity?tab=audit"
+          className="inline-flex items-center gap-1.5 self-start sm:self-center rounded-lg border border-brand-from/30 bg-brand-from/10 px-3 py-1.5 text-xs font-medium text-brand-from transition-colors hover:bg-brand-from/20"
+        >
+          <History className="h-3.5 w-3.5" />
+          <span>Full Leader Audit Log</span>
+        </Link>
       </header>
 
       {isError ? (

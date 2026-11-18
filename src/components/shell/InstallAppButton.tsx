@@ -1,52 +1,41 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import Link from 'next/link';
+import { usePathname } from 'next/navigation';
 import { Download } from 'lucide-react';
-
-type BeforeInstallPromptEvent = Event & {
-  prompt: () => Promise<void>;
-  userChoice: Promise<{ outcome: 'accepted' | 'dismissed' }>;
-};
+import { useHasMounted } from '@/hooks/useMediaQuery';
 
 export function InstallAppButton() {
-  const [prompt, setPrompt] = useState<BeforeInstallPromptEvent | null>(null);
+  const mounted = useHasMounted();
+  const pathname = usePathname();
+  const [isStandalone, setIsStandalone] = useState(false);
 
   useEffect(() => {
-    const isStandalone =
+    const check =
       window.matchMedia('(display-mode: standalone)').matches ||
       (window.navigator as Navigator & { standalone?: boolean }).standalone === true;
-    if (isStandalone) return;
+    setIsStandalone(check);
 
-    const onPrompt = (e: Event) => {
-      e.preventDefault();
-      setPrompt(e as BeforeInstallPromptEvent);
-    };
-    const onInstalled = () => setPrompt(null);
-
-    window.addEventListener('beforeinstallprompt', onPrompt);
+    const onInstalled = () => setIsStandalone(true);
     window.addEventListener('appinstalled', onInstalled);
-    return () => {
-      window.removeEventListener('beforeinstallprompt', onPrompt);
-      window.removeEventListener('appinstalled', onInstalled);
-    };
+    return () => window.removeEventListener('appinstalled', onInstalled);
   }, []);
 
-  if (!prompt) return null;
-
-  const install = async () => {
-    await prompt.prompt();
-    await prompt.userChoice;
-    setPrompt(null);
-  };
+  // Don't show the button if already running as an installed PWA,
+  // before hydration has finished, or if already on the /install page itself.
+  if (!mounted || isStandalone || pathname === '/install') {
+    return null;
+  }
 
   return (
-    <button
-      type="button"
-      onClick={install}
-      className="flex h-9 cursor-pointer items-center gap-1.5 rounded-lg border border-brand-from/30 bg-brand-from/10 px-3 text-sm font-medium text-brand-from transition-colors hover:bg-brand-from/20"
+    <Link
+      href="/install"
+      title="Install WarRoom app"
+      aria-label="Install WarRoom app"
+      className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-border-1 bg-surface-1 text-text-2 transition-colors hover:bg-surface-2 hover:text-text-1 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-from/40"
     >
       <Download className="h-4 w-4" />
-      <span>Install app</span>
-    </button>
+    </Link>
   );
 }

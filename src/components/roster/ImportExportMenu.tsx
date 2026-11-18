@@ -11,6 +11,7 @@ import {
 import { ImportModal } from './ImportModal';
 import type { DuplicateMode, ImportResult, ImportRow } from '@/lib/import-export/types';
 import type { Player } from '@/lib/types';
+import { useCanEdit } from '@/hooks/useCanEdit';
 
 function triggerDownload(blob: Blob, filename: string) {
   const url = URL.createObjectURL(blob);
@@ -31,6 +32,7 @@ interface ImportExportMenuProps {
 export function ImportExportMenu({ players, onImport }: ImportExportMenuProps) {
   const [importFormat, setImportFormat] = useState<'csv' | 'xlsx' | null>(null);
   const [exporting, setExporting] = useState<'csv' | 'xlsx' | null>(null);
+  const canEdit = useCanEdit();
 
   const handleExportCsv = useCallback(async () => {
     setExporting('csv');
@@ -90,6 +92,7 @@ export function ImportExportMenu({ players, onImport }: ImportExportMenuProps) {
       </DropdownMenu>
 
       {/* Import dropdown */}
+      {canEdit && (
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
           <Button variant="subtle" aria-label="Import players">
@@ -132,9 +135,10 @@ export function ImportExportMenu({ players, onImport }: ImportExportMenuProps) {
           </DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>
+      )}
 
       {/* Import modal (lazy-mounted) */}
-      {importFormat && (
+      {canEdit && importFormat && (
         <ImportModal
           open
           onOpenChange={open => { if (!open) setImportFormat(null); }}

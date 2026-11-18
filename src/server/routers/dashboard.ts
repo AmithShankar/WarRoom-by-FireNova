@@ -1,6 +1,21 @@
 import { z } from 'zod';
 import { router, publicProcedure } from '../trpc';
 import type { PlayerStatus } from '@/lib/prisma';
+import { canEdit } from '@/lib/access';
+import type { Context } from '../context';
+
+export function stripEditorAttribution(summary: string): string {
+  return summary.replace(/\s+(?:by|\(reclassified by|\(by)\s+[^)]+\)?$/, '');
+}
+
+async function isAuthorizedLeader(ctx: Context): Promise<boolean> {
+  if (!ctx.sessionTag) return false;
+  const player = await ctx.prisma.player.findUnique({
+    where: { playerTag: ctx.sessionTag },
+    select: { role: true, status: true },
+  });
+  return canEdit(player);
+}
 
 export const dashboardRouter = router({
   overview: publicProcedure.query(async ({ ctx }) => {
@@ -40,21 +55,30 @@ export const dashboardRouter = router({
     }),
   ),
 
-  activity: publicProcedure.query(({ ctx }) =>
-    ctx.prisma.clanActivity.findMany({ orderBy: { date: 'desc' }, take: 10 }),
-  ),
+  activity: publicProcedure.query(async ({ ctx }) => {
+    const isLeader = await isAuthorizedLeader(ctx);
+    const rows = await ctx.prisma.clanActivity.findMany({ orderBy: { date: 'desc' }, take: 10 });
+    if (isLeader) return rows;
+    return rows.map(r => ({ ...r, summary: stripEditorAttribution(r.summary) }));
+  }),
 
-  allActivity: publicProcedure.query(({ ctx }) =>
-    ctx.prisma.clanActivity.findMany({ orderBy: { date: 'desc' }, take: 500 }),
-  ),
+  allActivity: publicProcedure.query(async ({ ctx }) => {
+    const isLeader = await isAuthorizedLeader(ctx);
+    const rows = await ctx.prisma.clanActivity.findMany({ orderBy: { date: 'desc' }, take: 500 });
+    if (isLeader) return rows;
+    return rows.map(r => ({ ...r, summary: stripEditorAttribution(r.summary) }));
+  }),
 
   playerActivity: publicProcedure
     .input(z.object({ player: z.string() }))
-    .query(({ ctx, input }) =>
-      ctx.prisma.clanActivity.findMany({
+    .query(async ({ ctx, input }) => {
+      const isLeader = await isAuthorizedLeader(ctx);
+      const rows = await ctx.prisma.clanActivity.findMany({
         where: { player: input.player },
         orderBy: { date: 'desc' },
         take: 15,
-      }),
-    ),
+      });
+      if (isLeader) return rows;
+      return rows.map(r => ({ ...r, summary: stripEditorAttribution(r.summary) }));
+    }),
 });

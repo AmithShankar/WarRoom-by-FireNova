@@ -1,17 +1,20 @@
 "use client";
 
-import { memo } from "react";
+import { memo, useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
   AlertTriangle,
+  Download,
   Flame,
+  History,
   LayoutDashboard,
   Swords,
   Trophy,
   Users,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useHasMounted } from "@/hooks/useMediaQuery";
 
 export const SIDEBAR_NAV = [
   { href: "/", label: "Dashboard", short: "Home", icon: LayoutDashboard },
@@ -65,6 +68,45 @@ const NavLink = memo(function NavLink({
   );
 });
 
+function SidebarInstallLink({ active }: { active: boolean }) {
+  const mounted = useHasMounted();
+  const [isStandalone, setIsStandalone] = useState(false);
+
+  useEffect(() => {
+    const check =
+      window.matchMedia('(display-mode: standalone)').matches ||
+      (window.navigator as Navigator & { standalone?: boolean }).standalone === true;
+    setIsStandalone(check);
+    const onInstalled = () => setIsStandalone(true);
+    window.addEventListener('appinstalled', onInstalled);
+    return () => window.removeEventListener('appinstalled', onInstalled);
+  }, []);
+
+  if (!mounted || isStandalone) return null;
+
+  return (
+    <div className="px-3 pb-2">
+      <Link
+        href="/install"
+        className={cn(
+          "group flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors",
+          active
+            ? "bg-surface-3 text-text-1"
+            : "text-text-2 hover:bg-surface-2 hover:text-text-1",
+        )}
+      >
+        <Download
+          className={cn(
+            "h-4 w-4 transition-colors",
+            active ? "text-brand-from" : "text-text-3 group-hover:text-brand-to",
+          )}
+        />
+        Install App
+      </Link>
+    </div>
+  );
+}
+
 export function Sidebar() {
   const pathname = usePathname();
 
@@ -96,7 +138,20 @@ export function Sidebar() {
             }
           />
         ))}
+        <div className="pt-2">
+          <div className="px-3 pb-1 text-[10px] font-semibold uppercase tracking-wider text-text-3">
+            System
+          </div>
+          <NavLink
+            href="/activity"
+            label="Audit & Activity"
+            Icon={History}
+            active={pathname.startsWith("/activity")}
+          />
+        </div>
       </nav>
+
+      <SidebarInstallLink active={pathname === "/install"} />
 
       <div className="border-t border-border-1 p-4 text-[10px] uppercase tracking-widest text-text-3">
         <div className="font-mono">FN-WARROOM v1.0</div>

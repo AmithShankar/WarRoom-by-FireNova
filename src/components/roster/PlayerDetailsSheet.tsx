@@ -39,6 +39,7 @@ import { cn, formatNumber, formatPercent } from '@/lib/utils';
 import type { Player, Warning, WarningReason, WarWarningContext } from '@/lib/types';
 import type { IssueWarningInput } from '@/hooks/useRosterData';
 import { useIsDesktop, useNow } from '@/hooks/useMediaQuery';
+import { useCanEdit } from '@/hooks/useCanEdit';
 import { StatusBadge } from './StatusBadge';
 import { ThBadge } from './ThBadge';
 import { RoleBadge } from './RoleBadge';
@@ -78,7 +79,7 @@ const StatTile = memo(function StatTile({
 
 const WarningTimelineItem = memo(function WarningTimelineItem({
   w, now, onRemove, removing,
-}: { w: Warning; now: number; onRemove: (id: string) => void; removing: boolean }) {
+}: { w: Warning; now: number; onRemove?: (id: string) => void; removing: boolean }) {
   const [confirmOpen, setConfirmOpen] = useState(false);
   const expired = w.expirationDate
     ? new Date(w.expirationDate).getTime() < now
@@ -135,6 +136,7 @@ const WarningTimelineItem = memo(function WarningTimelineItem({
             </span>
           </div>
         )}
+        {onRemove && (
         <div className="mt-2 flex justify-end">
           <Popover open={confirmOpen} onOpenChange={setConfirmOpen}>
             <PopoverTrigger asChild>
@@ -165,6 +167,7 @@ const WarningTimelineItem = memo(function WarningTimelineItem({
             </PopoverContent>
           </Popover>
         </div>
+        )}
       </div>
     </li>
   );
@@ -199,7 +202,7 @@ const WarLogRow = memo(function WarLogRow({
   war, onSetExcused,
 }: {
   war: WarLogEntry;
-  onSetExcused: (participationId: string, excused: boolean, reason?: string) => void;
+  onSetExcused?: (participationId: string, excused: boolean, reason?: string) => void;
 }) {
   const [open, setOpen] = useState(false);
   const [reason, setReason] = useState('');
@@ -216,7 +219,15 @@ const WarLogRow = memo(function WarLogRow({
           {format(new Date(war.endTime), 'yyyy-MM-dd')} · {war.starsEarned}★ · {war.attacksUsed}/{war.attacksTotal}
         </span>
       </div>
-      {war.missed > 0 && (
+      {war.missed > 0 && !onSetExcused && war.excused && (
+        <span
+          title={war.excuseReason ?? 'Excused'}
+          className="shrink-0 rounded-md border border-emerald-500/30 bg-emerald-500/10 px-2 py-1 text-[11px] text-emerald-600 dark:text-emerald-400"
+        >
+          Excused
+        </span>
+      )}
+      {war.missed > 0 && onSetExcused && (
         war.excused ? (
           <button
             type="button"
@@ -270,6 +281,7 @@ export function PlayerDetailsSheet({
 }: PlayerDetailsSheetProps) {
   const isDesktop = useIsDesktop();
   const now = useNow();
+  const canEdit = useCanEdit();
 
   const perf = trpc.performance.forPlayer.useQuery(
     { playerTag: player?.playerTag ?? '' },
@@ -403,7 +415,7 @@ export function PlayerDetailsSheet({
             <TabsList>
               <TabsTrigger value="overview">Overview</TabsTrigger>
               <TabsTrigger value="warnings">Warnings</TabsTrigger>
-              <TabsTrigger value="issue">Issue Warning</TabsTrigger>
+              {canEdit && <TabsTrigger value="issue">Issue Warning</TabsTrigger>}
             </TabsList>
 
             {/* Overview */}
@@ -449,9 +461,9 @@ export function PlayerDetailsSheet({
                     <WarLogRow
                       key={w.participationId}
                       war={w}
-                      onSetExcused={(id, excused, reason) =>
-                        setExcused.mutate({ participationId: id, excused, reason })
-                      }
+                      onSetExcused={canEdit
+                        ? (id, excused, reason) => setExcused.mutate({ participationId: id, excused, reason })
+                        : undefined}
                     />
                   ))}
                 </ul>
@@ -520,7 +532,7 @@ export function PlayerDetailsSheet({
                       key={w.id}
                       w={w}
                       now={now}
-                      onRemove={id => removeWarning.mutate({ warningId: id })}
+                      onRemove={canEdit ? id => removeWarning.mutate({ warningId: id }) : undefined}
                       removing={removeWarning.isPending}
                     />
                   ))}
@@ -529,6 +541,7 @@ export function PlayerDetailsSheet({
             </TabsContent>
 
             {/* Issue */}
+            {canEdit && (
             <TabsContent value="issue">
               <div className="rounded-xl border border-border-1 bg-surface-1 p-4">
                 <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
@@ -633,6 +646,7 @@ export function PlayerDetailsSheet({
                 )}
               </div>
             </TabsContent>
+            )}
           </Tabs>
         </div>
 
@@ -640,7 +654,7 @@ export function PlayerDetailsSheet({
           <SheetClose asChild>
             <Button variant="ghost" className="sm:w-auto">Cancel</Button>
           </SheetClose>
-          {(player.status === 'New' || player.status === 'Warned') && (
+          {canEdit && (player.status === 'New' || player.status === 'Warned') && (
             <Popover
               open={activityOpen}
               onOpenChange={(v) => {
@@ -694,7 +708,7 @@ export function PlayerDetailsSheet({
               </PopoverContent>
             </Popover>
           )}
-          {player.postedChallenge ? (
+          {canEdit && (player.postedChallenge ? (
             <Button
               variant="outline"
               className="sm:w-auto"
@@ -712,7 +726,8 @@ export function PlayerDetailsSheet({
             >
               <ShieldCheck className="h-4 w-4" /> Mark Challenge Posted
             </Button>
-          )}
+          ))}
+          {canEdit && (
           <Popover open={confirmOpen} onOpenChange={setConfirmOpen}>
             <PopoverTrigger asChild>
               <Button className="sm:w-auto" disabled={isFailedChallenge && duration == null}>
@@ -735,6 +750,7 @@ export function PlayerDetailsSheet({
               </div>
             </PopoverContent>
           </Popover>
+          )}
         </SheetFooter>
       </SheetContent>
     </Sheet>

@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { router, publicProcedure } from '../trpc';
+import { router, publicProcedure, leaderProcedure } from '../trpc';
 import {
   aggregatePerformance,
   onlyCurrentMembers,
@@ -79,7 +79,7 @@ export const performanceRouter = router({
       }));
     }),
 
-  setExcused: publicProcedure
+  setExcused: leaderProcedure
     .input(z.object({
       participationId: z.string(),
       excused: z.boolean(),

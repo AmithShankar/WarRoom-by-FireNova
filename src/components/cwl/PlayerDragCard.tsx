@@ -70,7 +70,9 @@ export const PlayerDragCard = memo(function PlayerDragCard({
           </span>
         </div>
       </div>
-      <GripVertical className="mt-0.5 h-4 w-4 shrink-0 cursor-grab text-text-3 group-hover:text-text-2" />
+      {(onToggleSelect || dragging) && (
+        <GripVertical className="mt-0.5 h-4 w-4 shrink-0 cursor-grab text-text-3 group-hover:text-text-2" />
+      )}
     </div>
   );
 });

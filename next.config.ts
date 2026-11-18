@@ -14,6 +14,11 @@ const nextConfig: NextConfig = {
       '@radix-ui/react-dismissable-layer': './src/lib/react-dismissable-layer.tsx',
     },
   },
+  env: {
+    // Unique per build, inlined into the client bundle. Used to bust the
+    // persisted query cache on every deploy, whatever the host.
+    NEXT_PUBLIC_BUILD_ID: Date.now().toString(36),
+  },
 };
 
 export default nextConfig;

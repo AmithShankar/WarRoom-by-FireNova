@@ -21,6 +21,7 @@ import { StatusBadge } from './StatusBadge';
 import { ThBadge } from './ThBadge';
 import { RoleBadge } from './RoleBadge';
 import { PlayerActionMenu } from './PlayerActionMenu';
+import { useCanEdit } from '@/hooks/useCanEdit';
 
 export interface RosterTableProps {
   data: Player[];
@@ -36,6 +37,7 @@ export const RosterTable = memo(function RosterTable({
 }: RosterTableProps) {
   const [sorting, setSorting] = useState<SortingState>([{ id: 'name', desc: false }]);
   const [globalFilter, setGlobalFilter] = useState('');
+  const canEdit = useCanEdit();
 
   const handleView = useCallback((p: Player) => onRowClick(p), [onRowClick]);
 
@@ -83,7 +85,15 @@ export const RosterTable = memo(function RosterTable({
     {
       accessorKey: 'postedChallenge',
       header: 'Challenge',
-      cell: ({ row }) => (
+      cell: ({ row }) => !canEdit ? (
+        <span className="inline-flex h-6 w-6 items-center justify-center">
+          {row.original.postedChallenge ? (
+            <Check className="h-4 w-4 text-emerald-500 dark:text-emerald-400" />
+          ) : (
+            <X className="h-4 w-4 text-red-500" />
+          )}
+        </span>
+      ) : (
         <button
           type="button"
           onClick={e => { e.stopPropagation(); onSetChallenge(row.original); }}
@@ -155,7 +165,7 @@ export const RosterTable = memo(function RosterTable({
         />
       ),
     },
-  ], [handleView, onWarnDirect, onKick, onSetChallenge]);
+  ], [handleView, onWarnDirect, onKick, onSetChallenge, canEdit]);
 
   const table = useReactTable({
     data,

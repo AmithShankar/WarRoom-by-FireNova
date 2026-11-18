@@ -1,7 +1,7 @@
 import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
 import { addHours } from 'date-fns';
-import { router, publicProcedure } from '../trpc';
+import { router, publicProcedure, leaderProcedure } from '../trpc';
 import type { PlayerStatus } from '@/lib/prisma';
 
 const warningInput = z.object({
@@ -63,7 +63,7 @@ export const rosterRouter = router({
     }),
   ),
 
-  issueWarning: publicProcedure.input(warningInput).mutation(async ({ ctx, input }) => {
+  issueWarning: leaderProcedure.input(warningInput).mutation(async ({ ctx, input }) => {
     const player = await ctx.prisma.player.findUniqueOrThrow({ where: { playerTag: input.playerTag } });
     await ctx.prisma.warning.create({
       data: {
@@ -80,12 +80,13 @@ export const rosterRouter = router({
         thLevelCleared: input.context?.thLevelCleared ?? null,
       },
     });
+    const by = ctx.editor ? ` by ${ctx.editor.name}` : '';
     await ctx.prisma.clanActivity.create({
       data: {
         date: new Date(),
         type: 'warning',
         player: player.name,
-        summary: `${player.name} warned for ${REASON_DISPLAY[input.reason]}`,
+        summary: `${player.name} warned for ${REASON_DISPLAY[input.reason]}${by}`,
       },
     });
     if (player.status === 'Staying' || player.status === 'New') {
@@ -94,7 +95,7 @@ export const rosterRouter = router({
     return { ok: true };
   }),
 
-  removeWarning: publicProcedure
+  removeWarning: leaderProcedure
     .input(z.object({ warningId: z.string() }))
     .mutation(async ({ ctx, input }) => {
       const warning = await ctx.prisma.warning.findUniqueOrThrow({
@@ -103,12 +104,13 @@ export const rosterRouter = router({
       });
       const { player } = warning;
       await ctx.prisma.warning.delete({ where: { id: warning.id } });
+      const by = ctx.editor ? ` by ${ctx.editor.name}` : '';
       await ctx.prisma.clanActivity.create({
         data: {
           date: new Date(),
           type: 'warning',
           player: player.name,
-          summary: `${player.name} warning for ${REASON_DISPLAY[warning.reason]} removed`,
+          summary: `${player.name} warning for ${REASON_DISPLAY[warning.reason]} removed${by}`,
         },
       });
       const remaining = await ctx.prisma.warning.count({ where: { playerId: player.id } });
@@ -119,7 +121,7 @@ export const rosterRouter = router({
       return { ok: true };
     }),
 
-  kickPlayer: publicProcedure
+  kickPlayer: leaderProcedure
     .input(z.object({ playerTag: z.string(), reason: z.string().min(1) }))
     .mutation(async ({ ctx, input }) => {
       const player = await ctx.prisma.player.findUniqueOrThrow({ where: { playerTag: input.playerTag } });
@@ -132,18 +134,19 @@ export const rosterRouter = router({
           activity: { create: { date: new Date(), type: 'kick', summary: `Removed from clan: ${input.reason}` } },
         },
       });
+      const by = ctx.editor ? ` by ${ctx.editor.name}` : '';
       await ctx.prisma.clanActivity.create({
         data: {
           date: new Date(),
           type: 'kick',
           player: player.name,
-          summary: `${player.name} removed from clan: ${input.reason}`,
+          summary: `${player.name} removed from clan: ${input.reason}${by}`,
         },
       });
       return { ok: true };
     }),
 
-  reclassifyDeparture: publicProcedure
+  reclassifyDeparture: leaderProcedure
     .input(z.object({
       playerTag: z.string(),
       status: z.enum(['Kicked', 'Left']),
@@ -164,15 +167,16 @@ export const rosterRouter = router({
       // Update the existing departure activity in place rather than adding a
       // duplicate row. Sync writes "<name> left the clan"; a prior reclassify
       // may have left "<name> was kicked".
+      const by = ctx.editor ? ` by ${ctx.editor.name}` : '';
       const newSummary =
         input.status === 'Kicked'
-          ? `${player.name} was kicked`
-          : `${player.name} left the clan`;
+          ? `${player.name} was kicked${input.reason ? `: ${input.reason}` : ''}${by}`
+          : `${player.name} left the clan${by}`;
       const departure = await ctx.prisma.clanActivity.findFirst({
         where: {
           player: player.name,
           type: 'kick',
-          summary: { in: [`${player.name} left the clan`, `${player.name} was kicked`] },
+          summary: { contains: player.name },
         },
         orderBy: { date: 'desc' },
       });
@@ -189,12 +193,12 @@ export const rosterRouter = router({
       return { ok: true };
     }),
 
-  setChallenge: publicProcedure
+  setChallenge: leaderProcedure
     .input(z.object({ playerTag: z.string(), posted: z.boolean() }))
     .mutation(async ({ ctx, input }) => {
       const player = await ctx.prisma.player.findUniqueOrThrow({
         where: { playerTag: input.playerTag },
-        select: { id: true, status: true },
+        select: { id: true, name: true, status: true },
       });
       await ctx.prisma.player.update({
         where: { id: player.id },
@@ -203,10 +207,19 @@ export const rosterRouter = router({
           ...(input.posted && player.status === 'New' ? { status: 'Staying' as const } : {}),
         },
       });
+      const by = ctx.editor ? ` by ${ctx.editor.name}` : '';
+      await ctx.prisma.clanActivity.create({
+        data: {
+          date: new Date(),
+          type: 'promotion',
+          player: player.name,
+          summary: `${player.name} challenge ${input.posted ? 'marked posted' : 'unmarked'}${by}`,
+        },
+      });
       return { ok: true };
     }),
 
-  markStayingByActivity: publicProcedure
+  markStayingByActivity: leaderProcedure
     .input(z.object({
       playerTag: z.string(),
       activity: z.enum(['ClanGames', 'CWL', 'RaidWeekend', 'Other']),
@@ -223,6 +236,7 @@ export const rosterRouter = router({
         });
       }
       const label = ACTIVITY_LABELS[input.activity];
+      const by = ctx.editor ? ` by ${ctx.editor.name}` : '';
       await ctx.prisma.player.update({
         where: { id: player.id },
         data: {
@@ -231,15 +245,23 @@ export const rosterRouter = router({
             create: {
               date: new Date(),
               type: 'promotion',
-              summary: `Marked staying — ${label}`,
+              summary: `Marked staying — ${label}${by}`,
             },
           },
+        },
+      });
+      await ctx.prisma.clanActivity.create({
+        data: {
+          date: new Date(),
+          type: 'promotion',
+          player: player.name,
+          summary: `${player.name} marked staying (${label})${by}`,
         },
       });
       return { ok: true };
     }),
 
-  importPlayers: publicProcedure
+  importPlayers: leaderProcedure
     .input(z.object({
       players: z.array(z.object({
         playerTag: z.string(),

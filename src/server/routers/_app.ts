@@ -5,6 +5,7 @@ import { dashboardRouter } from './dashboard';
 import { syncRouter } from './sync';
 import { performanceRouter } from './performance';
 import { eventsRouter } from './events';
+import { authRouter } from './auth';
 
 export const appRouter = router({
   roster: rosterRouter,
@@ -13,6 +14,7 @@ export const appRouter = router({
   sync: syncRouter,
   performance: performanceRouter,
   events: eventsRouter,
+  auth: authRouter,
 });
 
 export type AppRouter = typeof appRouter;

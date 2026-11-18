@@ -12,6 +12,7 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { Button } from '@/components/ui/button';
 import type { Player } from '@/lib/types';
+import { useCanEdit } from '@/hooks/useCanEdit';
 
 export interface PlayerActionMenuProps {
   player: Player;
@@ -24,6 +25,7 @@ export interface PlayerActionMenuProps {
 export const PlayerActionMenu = memo(function PlayerActionMenu({
   player, onView, onWarnDirect, onKick, onSetChallenge,
 }: PlayerActionMenuProps) {
+  const canEdit = useCanEdit();
   const handleView = useCallback(() => onView(player), [onView, player]);
   const handleWarnDirect = useCallback(() => onWarnDirect(player), [onWarnDirect, player]);
   const handleKick = useCallback(() => onKick(player), [onKick, player]);
@@ -48,16 +50,20 @@ export const PlayerActionMenu = memo(function PlayerActionMenu({
         <DropdownMenuItem onClick={handleView}>
           <Eye /> View details
         </DropdownMenuItem>
-        <DropdownMenuItem onClick={handleWarnDirect}>
-          <AlertTriangle /> Issue warning
-        </DropdownMenuItem>
-        <DropdownMenuItem onClick={handleSetChallenge}>
-          <Check /> {player.postedChallenge ? 'Mark challenge not posted' : 'Mark challenge posted'}
-        </DropdownMenuItem>
-        <DropdownMenuSeparator />
-        <DropdownMenuItem danger onClick={handleKick}>
-          <UserMinus /> Kick from clan
-        </DropdownMenuItem>
+        {canEdit && (
+          <>
+            <DropdownMenuItem onClick={handleWarnDirect}>
+              <AlertTriangle /> Issue warning
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={handleSetChallenge}>
+              <Check /> {player.postedChallenge ? 'Mark challenge not posted' : 'Mark challenge posted'}
+            </DropdownMenuItem>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem danger onClick={handleKick}>
+              <UserMinus /> Kick from clan
+            </DropdownMenuItem>
+          </>
+        )}
       </DropdownMenuContent>
     </DropdownMenu>
   );

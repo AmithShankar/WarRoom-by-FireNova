@@ -30,6 +30,7 @@ import { CwlSkeleton } from '@/components/skeletons/PageSkeletons';
 import { QueryError } from '@/components/ui/QueryError';
 import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
+import { useCanEdit } from '@/hooks/useCanEdit';
 
 // Prefer a specific droppable (a slot or a panel) over the wrapping lineup
 // grid. When the pointer is in a gap between slots, only the grid matches -
@@ -64,6 +65,7 @@ function LineupGrid({ children }: { children: React.ReactNode }) {
 export function CWLWarPlanner() {
   const utils = trpc.useUtils();
   const board = trpc.cwl.board.useQuery();
+  const canEdit = useCanEdit();
 
   const bulkMove = trpc.cwl.bulkMove.useMutation({
     onSuccess: () => utils.cwl.board.invalidate(),
@@ -159,19 +161,20 @@ export function CWLWarPlanner() {
     [selected],
   );
 
-  const sensors = useSensors(
-    useSensor(PointerSensor, { activationConstraint: { distance: 4 } }),
-    useSensor(TouchSensor, { activationConstraint: { delay: 150, tolerance: 8 } }),
-  );
+  const pointerSensor = useSensor(PointerSensor, { activationConstraint: { distance: 4 } });
+  const touchSensor = useSensor(TouchSensor, { activationConstraint: { delay: 150, tolerance: 8 } });
+  const sensors = useSensors(pointerSensor, touchSensor);
 
   const handleStart = useCallback((e: DragStartEvent) => {
+    if (!canEdit) return;
     const tag = (e.active.data.current as { playerTag?: string } | undefined)?.playerTag;
     setActiveDragTag(tag ?? null);
-  }, []);
+  }, [canEdit]);
 
   const handleEnd = useCallback(
     (e: DragEndEvent) => {
       setActiveDragTag(null);
+      if (!canEdit) return;
       const tag = (e.active.data.current as { playerTag?: string } | undefined)?.playerTag;
       if (!tag || !e.over) return;
       const over = e.over.data.current as { kind?: string; slot?: number } | undefined;
@@ -194,7 +197,7 @@ export function CWLWarPlanner() {
         bulkMoveToExcluded([tag]);
       }
     },
-    [orderedLineupTags, addToLineup, reorderLineup, bulkMoveToAvailable, bulkMoveToExcluded],
+    [canEdit, orderedLineupTags, addToLineup, reorderLineup, bulkMoveToAvailable, bulkMoveToExcluded],
   );
 
   if (board.isError) return <QueryError message="Couldn't load the CWL lineup. Check your connection and try again." onRetry={() => board.refetch()} />;
@@ -214,8 +217,9 @@ export function CWLWarPlanner() {
               <div>
                 <CardTitle>War Lineup</CardTitle>
                 <CardDescription>
-                  Add players with the dropdown - the lineup auto-sorts by Town
-                  Hall. Drag to fine-tune the order; do manual tweaks last.
+                  {canEdit
+                    ? 'Add players with the dropdown - the lineup auto-sorts by Town Hall. Drag to fine-tune the order; do manual tweaks last.'
+                    : 'The lineup for the current CWL season.'}
                 </CardDescription>
               </div>
               <div className="flex shrink-0 flex-wrap items-center gap-2">
@@ -229,12 +233,16 @@ export function CWLWarPlanner() {
                 >
                   {placedCount}/{CWL_WAR_SIZE} placed
                 </span>
-                <AddPlayerCombobox
-                  available={availablePlayers}
-                  disabled={lineupFull}
-                  onAdd={tag => addToLineup.mutate({ playerTag: tag })}
-                />
-                <ResetLineupButton onReset={() => resetBoard.mutate()} />
+                {canEdit && (
+                  <>
+                    <AddPlayerCombobox
+                      available={availablePlayers}
+                      disabled={lineupFull}
+                      onAdd={tag => addToLineup.mutate({ playerTag: tag })}
+                    />
+                    <ResetLineupButton onReset={() => resetBoard.mutate()} />
+                  </>
+                )}
               </div>
             </div>
           </CardHeader>
@@ -248,7 +256,7 @@ export function CWLWarPlanner() {
                   slot={slot}
                   player={player}
                   selected={selected}
-                  onToggleSelect={toggleSelect}
+                  onToggleSelect={canEdit ? toggleSelect : undefined}
                 />
               );
             })}
@@ -261,7 +269,7 @@ export function CWLWarPlanner() {
             kind="available"
             players={availablePlayers}
             selected={selected}
-            onToggleSelect={toggleSelect}
+            onToggleSelect={canEdit ? toggleSelect : undefined}
             search={search}
             onSearchChange={setSearch}
           />
@@ -270,12 +278,12 @@ export function CWLWarPlanner() {
             kind="excluded"
             players={excludedPlayers}
             selected={selected}
-            onToggleSelect={toggleSelect}
+            onToggleSelect={canEdit ? toggleSelect : undefined}
           />
         </div>
       </div>
 
-      {selected.size > 0 && (
+      {canEdit && selected.size > 0 && (
         <BulkActionBar
           count={selected.size}
           lineupFull={lineupFull}

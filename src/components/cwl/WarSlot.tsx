@@ -11,7 +11,7 @@ export interface WarSlotProps {
   slot: number;
   player: Player | null;
   selected: Set<string>;
-  onToggleSelect: (tag: string) => void;
+  onToggleSelect?: (tag: string) => void;
 }
 
 export const WarSlot = memo(function WarSlot({

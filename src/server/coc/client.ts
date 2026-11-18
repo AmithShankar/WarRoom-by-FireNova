@@ -22,3 +22,22 @@ export async function cocGet<T>(path: string): Promise<T> {
   if (!res.ok) throw new CocApiError(res.status, `CoC API ${res.status}: ${await res.text()}`);
   return res.json() as Promise<T>;
 }
+
+/** POST a JSON body to a CoC API path. Same base URL, auth, tag encoding and errors as cocGet. */
+export async function cocPost<T>(path: string, body: unknown): Promise<T> {
+  if (!TOKEN) throw new CocApiError(0, 'COC_API_TOKEN is not set');
+  const url = `${BASE}${path.replace(/#/g, '%23')}`;
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${TOKEN}`,
+      Accept: 'application/json',
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(body),
+    cache: 'no-store',
+  });
+  if (res.status === 429) throw new CocApiError(429, 'CoC API rate limit exceeded');
+  if (!res.ok) throw new CocApiError(res.status, `CoC API ${res.status}: ${await res.text()}`);
+  return res.json() as Promise<T>;
+}

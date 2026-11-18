@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { TRPCError } from '@trpc/server';
-import { router, publicProcedure } from '../trpc';
+import { router, publicProcedure, leaderProcedure } from '../trpc';
 import { sortLineupByTownHall } from '@/lib/cwl-order';
 
 const CWL_WAR_SIZE = 15;
@@ -19,7 +19,7 @@ export const cwlRouter = router({
   }),
 
   // Bulk move selected players to a bucket.
-  bulkMove: publicProcedure
+  bulkMove: leaderProcedure
     .input(z.object({
       playerTags: z.array(z.string()),
       target: z.enum(['lineup', 'available', 'excluded']),
@@ -53,11 +53,19 @@ export const cwlRouter = router({
           i++;
         }
       }
+      const by = ctx.editor ? ` by ${ctx.editor.name}` : '';
+      await ctx.prisma.clanActivity.create({
+        data: {
+          date: new Date(),
+          type: 'cwl',
+          summary: `CWL: ${input.playerTags.length} player(s) moved to ${input.target}${by}`,
+        },
+      });
       return { ok: true };
     }),
 
   // Add one player to the lineup, then re-number every slot by Town Hall desc.
-  addToLineup: publicProcedure
+  addToLineup: leaderProcedure
     .input(z.object({ playerTag: z.string() }))
     .mutation(async ({ ctx, input }) => {
       const current = await ctx.prisma.player.findMany({
@@ -83,11 +91,20 @@ export const cwlRouter = router({
           }),
         ),
       ]);
+      const by = ctx.editor ? ` by ${ctx.editor.name}` : '';
+      await ctx.prisma.clanActivity.create({
+        data: {
+          date: new Date(),
+          type: 'cwl',
+          player: added.name,
+          summary: `${added.name} added to CWL lineup${by}`,
+        },
+      });
       return { ok: true };
     }),
 
   // Apply a manual lineup order - orderedTags[i] gets slot i + 1.
-  reorderLineup: publicProcedure
+  reorderLineup: leaderProcedure
     .input(z.object({ orderedTags: z.array(z.string()).max(CWL_WAR_SIZE) }))
     .mutation(async ({ ctx, input }) => {
       await ctx.prisma.$transaction([
@@ -102,13 +119,29 @@ export const cwlRouter = router({
           }),
         ),
       ]);
+      const by = ctx.editor ? ` by ${ctx.editor.name}` : '';
+      await ctx.prisma.clanActivity.create({
+        data: {
+          date: new Date(),
+          type: 'cwl',
+          summary: `CWL lineup reordered${by}`,
+        },
+      });
       return { ok: true };
     }),
 
   // Clear the entire board - every player returns to Available.
-  reset: publicProcedure.mutation(async ({ ctx }) => {
+  reset: leaderProcedure.mutation(async ({ ctx }) => {
     await ctx.prisma.player.updateMany({
       data: { cwlSlot: null, cwlExcluded: false },
+    });
+    const by = ctx.editor ? ` by ${ctx.editor.name}` : '';
+    await ctx.prisma.clanActivity.create({
+      data: {
+        date: new Date(),
+        type: 'cwl',
+        summary: `CWL lineup cleared${by}`,
+      },
     });
     return { ok: true };
   }),

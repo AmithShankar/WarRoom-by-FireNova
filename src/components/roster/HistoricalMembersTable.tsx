@@ -15,6 +15,7 @@ import { cn } from "@/lib/utils";
 import type { Player, PlayerStatus } from "@/lib/types";
 import { ThBadge } from "./ThBadge";
 import { StatusFilter } from "./StatusFilter";
+import { useCanEdit } from "@/hooks/useCanEdit";
 
 const HISTORICAL_STATUSES: PlayerStatus[] = ["Kicked", "Left"];
 
@@ -116,6 +117,10 @@ export const HistoricalMembersTable = memo(function HistoricalMembersTable({
 }: HistoricalMembersTableProps) {
   const [query, setQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<PlayerStatus[]>([]);
+  const canEdit = useCanEdit();
+  const headers = canEdit
+    ? ["Player", "TH", "Removal", "Date", "Reason", "Action"]
+    : ["Player", "TH", "Removal", "Date", "Reason"];
 
   const rows = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -162,7 +167,7 @@ export const HistoricalMembersTable = memo(function HistoricalMembersTable({
           <table className="w-full border-collapse text-sm">
             <thead className="sticky top-0 z-10 bg-surface-1/85 backdrop-blur">
               <tr className="border-b border-border-1">
-                {["Player", "TH", "Removal", "Date", "Reason", "Action"].map(
+                {headers.map(
                   (h) => (
                     <th
                       key={h}
@@ -216,15 +221,17 @@ export const HistoricalMembersTable = memo(function HistoricalMembersTable({
                       ? p.kickReason || "-"
                       : "Left voluntarily"}
                   </td>
-                  <td className="px-3 py-2.5 align-middle">
-                    <ReclassifyCell player={p} onReclassify={onReclassify} />
-                  </td>
+                  {canEdit && (
+                    <td className="px-3 py-2.5 align-middle">
+                      <ReclassifyCell player={p} onReclassify={onReclassify} />
+                    </td>
+                  )}
                 </tr>
               ))}
               {rows.length === 0 && (
                 <tr>
                   <td
-                    colSpan={6}
+                    colSpan={headers.length}
                     className="px-4 py-10 text-center text-sm text-text-3"
                   >
                     No historical members.

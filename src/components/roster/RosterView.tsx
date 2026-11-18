@@ -15,9 +15,11 @@ import { HistoricalMembersTable } from './HistoricalMembersTable';
 import { PlayerDetailsSheet } from './PlayerDetailsSheet';
 import { WarningSheet } from './WarningSheet';
 import { KickSheet } from './KickSheet';
+import { useCanEdit } from '@/hooks/useCanEdit';
 
 export function RosterView() {
   const isDesktop = useIsDesktop();
+  const canEdit = useCanEdit();
   const { data, isLoading, isError, refetch, issueWarning, kickPlayer, importPlayers, setChallenge, reclassifyDeparture } =
     useRosterData();
 
@@ -136,6 +138,8 @@ export function RosterView() {
         onIssueWarning={issueWarning}
       />
 
+      {canEdit && (
+      <>
       <WarningSheet
         key={warnPlayer?.playerTag ? `warn-${warnPlayer.playerTag}` : 'warn-none'}
         player={warnPlayer}
@@ -151,6 +155,8 @@ export function RosterView() {
         onOpenChange={setKickOpen}
         onKick={kickPlayer}
       />
+      </>
+      )}
     </>
   );
 }

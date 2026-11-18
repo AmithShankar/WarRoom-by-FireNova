@@ -13,7 +13,7 @@ export interface CwlPanelProps {
   kind: 'available' | 'excluded';
   players: Player[];
   selected: Set<string>;
-  onToggleSelect: (tag: string) => void;
+  onToggleSelect?: (tag: string) => void;
   search?: string;
   onSearchChange?: (v: string) => void;
 }

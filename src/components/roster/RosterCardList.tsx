@@ -10,6 +10,7 @@ import { StatusBadge } from './StatusBadge';
 import { ThBadge } from './ThBadge';
 import { RoleBadge } from './RoleBadge';
 import { PlayerActionMenu } from './PlayerActionMenu';
+import { useCanEdit } from '@/hooks/useCanEdit';
 
 export interface RosterCardListProps {
   data: Player[];
@@ -20,9 +21,10 @@ export interface RosterCardListProps {
 }
 
 const PlayerCard = memo(function PlayerCard({
-  player, onClick, onWarnDirect, onKick, onSetChallenge,
+  player, canEdit, onClick, onWarnDirect, onKick, onSetChallenge,
 }: {
   player: Player;
+  canEdit: boolean;
   onClick: (p: Player) => void;
   onWarnDirect: (p: Player) => void;
   onKick: (p: Player) => void;
@@ -70,7 +72,11 @@ const PlayerCard = memo(function PlayerCard({
       </div>
 
       <div className="grid grid-cols-3 gap-2 border-t border-border-1 pt-3 text-center">
-        <Stat label="Challenge" value={
+        <Stat label="Challenge" value={!canEdit ? (
+          player.postedChallenge
+            ? <Check className="h-4 w-4 text-emerald-500 dark:text-emerald-400" />
+            : <X className="h-4 w-4 text-red-500" />
+        ) : (
           <button
             type="button"
             onClick={e => { e.stopPropagation(); onSetChallenge(player); }}
@@ -81,7 +87,7 @@ const PlayerCard = memo(function PlayerCard({
               ? <Check className="h-4 w-4 text-emerald-500 dark:text-emerald-400" />
               : <X className="h-4 w-4 text-red-500" />}
           </button>
-        } />
+        )} />
         <Stat label="CWL ★" value={<span className="font-mono">{player.cwlStats.stars}</span>} icon={Star} />
         <Stat label="Warnings" value={<span className="font-mono">{player.warnings.length}</span>} />
       </div>
@@ -103,6 +109,7 @@ function Stat({ label, value, icon: Icon }: { label: string; value: React.ReactN
 
 export function RosterCardList({ data, onRowClick, onWarnDirect, onKick, onSetChallenge }: RosterCardListProps) {
   const [query, setQuery] = useState('');
+  const canEdit = useCanEdit();
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -131,6 +138,7 @@ export function RosterCardList({ data, onRowClick, onWarnDirect, onKick, onSetCh
           <PlayerCard
             key={p.playerTag}
             player={p}
+            canEdit={canEdit}
             onClick={onRowClick}
             onWarnDirect={onWarnDirect}
             onKick={onKick}
